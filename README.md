@@ -127,6 +127,16 @@ For more option, see APlayer [options](https://aplayer.js.org/#/home?id=options)
 - Optimize search results
 - Optimize page display
 
+## Star History
+
+<a href="https://star-history.com/#Aicirou/goindex-theme-acrou&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Aicirou/goindex-theme-acrou&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Aicirou/goindex-theme-acrou&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Aicirou/goindex-theme-acrou&type=Date" />
+ </picture>
+</a>
+
 ## License
 
 [MIT](LICENSE)
