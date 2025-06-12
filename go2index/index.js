@@ -5,11 +5,11 @@ var  authConfig  =  {
   theme: "acrou",
   // 强烈建议使用您自己的 client_id 和 client_secret
   client_id: "746239575955-oao9hkv614p8glrqpvuh5i8mqfoq145b.apps.googleusercontent.com", // 从 Google Cloud Console 获取的客户端 ID
-  client_secret: "u5a1CSY5pNjdD2tGTU93TTnI",
-  refresh_token: "", // 授权 token
+   client_secret: "u5a1CSY5pNjdD2tGTU93TTnI",
+   refresh_token: "", // 授权 token
   /*
    * 设置要显示的多个网盘；请按格式添加多个
-   * [id]: 可以是团队盘id、子文件夹id, 或者是 "root" (代表个人盘根目录);
+   * [id]: 可以是团队盘id、子文件夹id、快捷方式id, 或者是 "root" (代表个人盘根目录);
    * [name]: 显示的名称
    * [user]: Basic Auth 用户名
    * [pass]: Basic Auth 密码
@@ -18,7 +18,7 @@ var  authConfig  =  {
    * [注意] 文件链接默认不保护, 可方便直链下载/外链播放;
    * 若您想保护文件链接, 您需要设置 protect_file_link 为 true, 如果想进行外链播放等操作, 需要将 host 换成 user:pass@host
    * 不需要Basic Auth的盘, 只需同时留空user和pass即可.(直接不设置也可以)
-   * [注意] id 设置为子文件夹id的盘, 不支持搜索功能(不影响其他盘).
+   * [注意] 文件夹快捷方式的搜索是在浏览器端模拟的，对于超大文件夹可能会有性能影响。
    */
   roots: [
     {
@@ -107,7 +107,7 @@ var themeOptions = {
 const FUNCS = {
   /**
      * 转换成Google搜索语法相对安全的搜索关键字
-   */
+     */
   formatSearchKeyword: function(keyword) {
     let nothing = "";
     let space = " ";
@@ -204,15 +204,15 @@ async function handleRequest(request) {
   }
 
     // 从路径中提取网盘顺序
-       // 并根据顺序获取对应的gd实例
+      // 并根据顺序获取对应的gd实例
   let gd;
   let url = new URL(request.url);
   let path = decodeURI(url.pathname);
 
   /**
 * 重定向到起始页
-   * @returns {Response}
-   */
+    * @returns {Response}
+    */
   function redirectToIndexPage() {
     return new Response("", {
       status: 301,
@@ -235,6 +235,10 @@ async function handleRequest(request) {
     const order = Number(num);
     if (order >= 0 && order < gds.length) {
       gd = gds[order];
+      // 检查根目录是否有效
+      if (gd.root_type === -1) {
+          return new Response(`Root '${gd.root.name}' (index: ${order}) is misconfigured or invalid.`, { status: 500 });
+      }
     } else {
       return redirectToIndexPage();
     }
@@ -254,7 +258,8 @@ async function handleRequest(request) {
           html(gd.order, {
             q: params.get("q") || "",
             is_search_page: true,
-            root_type: gd.root_type,
+            // 修复：始终传递一个支持搜索的类型给前端，以强制显示搜索框
+            root_type: 0, 
           }),
           {
             status: 200,
@@ -268,7 +273,7 @@ async function handleRequest(request) {
       const params = url.searchParams;
       return gd.view(params.get("url"), request.headers.get("Range"));
     } else if (command !== "down" && request.method === "GET") {
-      return new Response(html(gd.order, { root_type: gd.root_type }), {
+      return new Response(html(gd.order, { root_type: 0 }), {
         status: 200,
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
@@ -288,6 +293,10 @@ async function handleRequest(request) {
     let order = Number(split[1].slice(0, -1));
     if (order >= 0 && order < gds.length) {
       gd = gds[order];
+      // 检查根目录是否有效
+      if (gd.root_type === -1) {
+          return new Response(`Root '${gd.root.name}' (index: ${order}) is misconfigured or invalid.`, { status: 500 });
+      }
     } else {
       return redirectToIndexPage();
     }
@@ -307,7 +316,8 @@ async function handleRequest(request) {
   if (path.substr(-1) == "/" || action != null) {
     return (
       basic_auth_res ||
-      new Response(html(gd.order, { root_type: gd.root_type }), {
+      // 修复：始终传递一个支持搜索的类型给前端，以强制显示搜索框
+      new Response(html(gd.order, { root_type: 0 }), {
         status: 200,
         headers: { "Content-Type": "text/html; charset=utf-8" },
       })
@@ -443,13 +453,59 @@ class googleDrive {
    * @returns {Promise<void>}
    */
   async initRootType() {
-    const root_id = this.root["id"];
+    let root_id = this.root["id"];
+    
+    // 如果根目录ID为空，则将其标记为无效并返回
+    if (!root_id) {
+        console.error(`Root item '${this.root.name}' has no ID. Disabling.`);
+        this.root_type = -1; // -1 表示无效根目录
+        return;
+    }
+
+    // 检查根ID本身是否指向一个快捷方式
+    const root_obj = await this.findItemById(root_id);
+
+    if (root_obj && root_obj.mimeType === CONSTS.shortcut_mime_type) {
+        if(root_obj.shortcutDetails && root_obj.shortcutDetails.targetId) {
+            // 是快捷方式。将根ID更新为目标ID。
+            this.root.id = root_obj.shortcutDetails.targetId;
+            // 如果快捷方式指向的不是文件夹，则这是一个错误的配置。
+            if (root_obj.shortcutDetails.targetMimeType !== CONSTS.folder_mime_type) {
+                console.error(`Root item '${this.root.name}' is a shortcut but does not point to a folder. Disabling.`);
+                this.root_type = -1; // 标记为无效
+                return;
+            }
+            // 更新 root_id 以进行下一步的分类
+            root_id = this.root.id;
+        } else {
+            // 是一个无效的快捷方式，没有目标
+            console.error(`Root item '${this.root.name}' is an invalid shortcut with no target. Disabling.`);
+            this.root_type = -1;
+            return;
+        }
+    }
+
+    // 现在，使用可能已解析的ID对根进行分类
     const types = CONSTS.gd_root_type;
     if (root_id === "root" || root_id === authConfig.user_drive_real_root_id) {
       this.root_type = types.user_drive;
     } else {
-      const obj = await this.getShareDriveObjById(root_id);
-      this.root_type = obj ? types.share_drive : types.sub_folder;
+      // 检查解析后的ID是否为共享云端硬盘
+      const drive_obj = await this.getShareDriveObjById(root_id);
+      if (drive_obj) {
+        this.root_type = types.share_drive;
+      } else {
+        // 如果不是共享云端硬盘，它必须是另一个云端硬盘中的文件夹。
+        // 我们需要验证它是一个文件夹。
+        const item_obj_to_check = (root_obj && root_obj.id === root_id) ? root_obj : await this.findItemById(root_id);
+        if (item_obj_to_check && item_obj_to_check.mimeType === CONSTS.folder_mime_type) {
+            this.root_type = types.sub_folder;
+        } else {
+            // 它是其他东西，可能是被配置为根的文件？无效。
+            console.error(`Root item '${this.root.name}' with ID '${root_id}' is not a valid folder, shared drive, or user drive.`);
+            this.root_type = -1; // 标记为无效
+        }
+      }
     }
   }
 
@@ -461,9 +517,9 @@ class googleDrive {
   _processShortcut(file) {
       if (file && file.mimeType === CONSTS.shortcut_mime_type && file.shortcutDetails && file.shortcutDetails.targetId) {
           return {
-              ...file,
-              id: file.shortcutDetails.targetId,
-              mimeType: file.shortcutDetails.targetMimeType,
+                ...file,
+                id: file.shortcutDetails.targetId,
+                mimeType: file.shortcutDetails.targetMimeType,
           };
       }
       return file;
@@ -674,27 +730,48 @@ class googleDrive {
     const types = CONSTS.gd_root_type;
     const is_user_drive = this.root_type === types.user_drive;
     const is_share_drive = this.root_type === types.share_drive;
+    const is_sub_folder = this.root_type === types.sub_folder;
 
     const empty_result = {
       nextPageToken: null,
       curPageIndex: page_index,
-      data: null,
+      data: { files: [] },
     };
+
+    if (!origin_keyword) {
+      // 关键字为空，返回
+      return empty_result;
+    }
+    
+    // 如果是子文件夹（或指向子文件夹的快捷方式），执行客户端模拟搜索
+    if (is_sub_folder) {
+        // listAllFiles 函数会返回带有正确路径的文件列表
+        const all_files = await this.listAllFiles(this.root.id);
+        
+        // 直接根据文件名过滤
+        const filtered_files = all_files.filter(file => file.name.toLowerCase().includes(origin_keyword.toLowerCase()));
+        
+        // FIX: 将找到的文件的路径缓存起来，以便id2path可以正确工作
+        filtered_files.forEach(file => {
+          if (file.id && file.path) {
+            this.id_path_cache[file.id] = file.path;
+          }
+        });
+        
+        return {
+            ...empty_result,
+            data: { files: filtered_files },
+        };
+    }
+
 
     if (!is_user_drive && !is_share_drive) {
       return empty_result;
     }
-    let keyword = FUNCS.formatSearchKeyword(origin_keyword);
-    if (!keyword) {
-      // 关键字为空，返回
-      return empty_result;
-    }
-    let words = keyword.split(/\s+/);
-    let name_search_str = `name contains '${words.join(
-      "' AND name contains '"
-    )}'`;
 
-    // corpora可以是 user, drive, domain, allDrives. user为个人盘, drive为团队盘. 需匹配driveId
+    const sanitized_keyword = origin_keyword.replace(/'/g, "\\'");
+    const name_search_str = `name contains '${sanitized_keyword}'`;
+
     let params = {};
     if (is_user_drive) {
       params.corpora = "user";
@@ -702,7 +779,6 @@ class googleDrive {
     if (is_share_drive) {
       params.corpora = "drive";
       params.driveId = this.root.id;
-      // 此参数将于2020年6月1日后失效. 共享云端硬盘内容会统一包含在结果中.
       params.includeItemsFromAllDrives = true;
       params.supportsAllDrives = true;
     }
@@ -731,6 +807,51 @@ class googleDrive {
     };
   }
 
+  // REVISED: 递归获取文件夹下所有文件，并构建其相对路径
+  async listAllFiles(folderId, basePath = '/') {
+    const allFiles = [];
+    // 队列中现在存储对象，包含ID和其对应的路径
+    const foldersToProcess = [{ id: folderId, path: basePath }];
+    const processedFolders = new Set();
+
+    while (foldersToProcess.length > 0) {
+      const { id: currentFolderId, path: currentPath } = foldersToProcess.shift();
+
+      if (processedFolders.has(currentFolderId)) {
+        continue;
+      }
+      processedFolders.add(currentFolderId);
+
+      try {
+        let pageToken = null;
+        do {
+          // _ls 内部已经调用了 _processShortcuts, 返回的是处理过的文件列表
+          const result = await this._ls(currentFolderId, pageToken, 0);
+          if (result && result.data && result.data.files) {
+            for (const item of result.data.files) {
+              // 构建当前文件/文件夹的完整相对路径
+              const itemPath = (currentPath + item.name).replace('//', '/');
+              
+              if (item.mimeType === CONSTS.folder_mime_type) {
+                // 如果是文件夹，将其完整路径和ID加入处理队列
+                allFiles.push({ ...item, path: itemPath + '/' });
+                foldersToProcess.push({ id: item.id, path: itemPath + '/' });
+              } else {
+                // 如果是文件，直接添加
+                allFiles.push({ ...item, path: itemPath });
+              }
+            }
+          }
+          pageToken = result.nextPageToken;
+        } while (pageToken);
+      } catch (e) {
+        console.error(`Failed to list folder ${currentFolderId}:`, e.message);
+        // 如果无法列出某个文件夹（如权限不足），则跳过并继续处理其他文件夹
+      }
+    }
+    return allFiles;
+  }
+
     /**
      * 逐个向上获取此文件或文件夹的父级文件夹的文件对象. 注意:会很慢!!!
      * 最多向上查找至当前gd对象的根目录(root id)
@@ -739,9 +860,10 @@ class googleDrive {
      *
      * @param child_id
      * @param contain_myself
+     * @param force_reload 强制重新加载，忽略缓存
      * @returns {Promise<[]>}
      */
-  async findParentFilesRecursion(child_id, contain_myself = true) {
+  async findParentFilesRecursion(child_id, contain_myself = true, force_reload = false) {
     const gd = this;
     const gd_root_id = gd.root.id;
     const user_drive_real_root_id = authConfig.user_drive_real_root_id;
@@ -755,35 +877,39 @@ class googleDrive {
     let meet_top = false;
 
     async function addItsFirstParent(file_obj) {
-      if (!file_obj) return;
-      if (file_obj.mimeType === CONSTS.shortcut_mime_type) {
-        // 如果是快捷方式，则从其目标开始查找
-        if(file_obj.shortcutDetails && file_obj.shortcutDetails.targetId) {
-            const new_file_obj = await gd.findItemById(file_obj.shortcutDetails.targetId);
-            await addItsFirstParent(new_file_obj);
-        }
+      if (!file_obj || !file_obj.id) return;
+      
+      if (file_obj.id === target_top_id) {
+        meet_top = true;
         return;
       }
-      if (!file_obj.parents) return;
-      if (file_obj.parents.length < 1) return;
 
-      let p_ids = file_obj.parents;
-      if (p_ids && p_ids.length > 0) {
-        // 它的第一个父级
-        const first_p_id = p_ids[0];
-        if (first_p_id === target_top_id) {
-          meet_top = true;
-          return;
-        }
-        const p_file_obj = await gd.findItemById(first_p_id);
+      if (!file_obj.parents || file_obj.parents.length < 1) {
+        // 如果一个文件没有父文件夹，它可能位于"我的云端硬盘"的根目录中
+        if (is_user_drive) meet_top = true;
+        return;
+      }
+      
+      // 它的第一个父级
+      const first_p_id = file_obj.parents[0];
+      if (first_p_id === target_top_id) {
+        meet_top = true;
+        return;
+      }
+
+      try {
+        const p_file_obj = await gd.findItemById(first_p_id, true); // 获取原始对象
         if (p_file_obj && p_file_obj.id) {
           parent_files.push(p_file_obj);
           await addItsFirstParent(p_file_obj);
         }
+      } catch (e) {
+        console.error("Error finding parent:", e.message);
+        meet_top = false;
       }
     }
 
-    const child_obj = await gd.findItemById(child_id);
+    const child_obj = await gd.findItemById(child_id, true); // 获取原始对象
     if (contain_myself) {
       parent_files.push(child_obj);
     }
@@ -795,54 +921,57 @@ class googleDrive {
   /**
    * 获取文件相对于本盘根目录的路径
    * @param child_id
+   * @param force_reload - 是否强制忽略并刷新缓存
    * @returns {Promise<string>} [注]如果此id代表的item不在目标gd盘下,那么此方法将返回空字符串""
    */
-  async findPathById(child_id) {
-    if (this.id_path_cache[child_id]) {
+  async findPathById(child_id, force_reload = false) {
+    if (!force_reload && this.id_path_cache[child_id]) {
       return this.id_path_cache[child_id];
     }
 
-    const p_files = await this.findParentFilesRecursion(child_id);
+    const p_files = await this.findParentFilesRecursion(child_id, true, force_reload);
     if (!p_files || p_files.length < 1) return "";
 
-    let cache = [];
-    // 缓存找到的各层级的路径和id
-    p_files.forEach((value, idx) => {
-      const is_folder =
-        idx === 0 ? p_files[idx].mimeType === CONSTS.folder_mime_type : true;
-      let path =
-        "/" +
-        p_files
-          .slice(idx)
-          .map((it) => it.name)
-          .reverse()
-          .join("/");
-      if (is_folder) path += "/";
-      cache.push({ id: p_files[idx].id, path: path });
-    });
+    // p_files is [child, parent1, parent2, ...]. We need to reverse it for path building.
+    const path_parts = p_files.map(it => it.name).reverse();
+    let path = "/" + path_parts.join("/");
 
-    cache.forEach((obj) => {
-      this.id_path_cache[obj.id] = obj.path;
-      this.paths[obj.path] = obj.id;
-    });
+    // The first file in p_files is the child object itself.
+    const child_obj_raw = p_files[0];
+    const child_obj_processed = this._processShortcut(child_obj_raw);
 
-    return cache[0].path;
+    if (child_obj_processed.mimeType === CONSTS.folder_mime_type) {
+        path += "/";
+    }
+
+    // Only set cache if not forcing reload
+    if (!force_reload) {
+        // 缓存时使用原始ID
+        this.id_path_cache[child_obj_raw.id] = path;
+        this.paths[path] = child_obj_raw.id;
+    }
+    
+    return path;
   }
 
   // 根据id获取文件item
-  async findItemById(id) {
+  async findItemById(id, raw = false) {
     const is_user_drive = this.root_type === CONSTS.gd_root_type.user_drive;
     let url = `https://www.googleapis.com/drive/v3/files/${id}?fields=${
       CONSTS.default_file_fields
     }${is_user_drive ? "" : "&supportsAllDrives=true"}`;
     let requestOption = await this.requestOption();
     let res = await fetch(url, requestOption);
-    return await res.json();
+    const file = await res.json();
+    if (file.error) {
+        throw new Error(`API Error: ${file.error.message}`);
+    }
+    return raw ? file : this._processShortcut(file);
   }
 
   async findPathId(path) {
     let c_path = "/";
-    let c_id = this.paths[c_path];
+    let c_id = this.paths["/"];
 
     let arr = path.trim("/").split("/");
     for (let name of arr) {
