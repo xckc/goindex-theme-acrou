@@ -1,24 +1,24 @@
-// =======Options START=======
+// =======配置项开始=======
 var  authConfig  =  {
-  siteName : "Chillx",  // site name
-  version : "1.1.2" ,  // program version
+  siteName : "Chillx",  // 网站名称
+  version : "1.1.2" ,  // 程序版本，修改为“1.1.2”以匹配主题的检查，从而禁用更新提示
   theme: "acrou",
-  // It is strongly recommended to use your own client_id and client_secret
-  client_id: "746239575955-oao9hkv614p8glrqpvuh5i8mqfoq145b.apps.googleusercontent.com", // Client id from Google Cloud Console
-    client_secret: "u5a1CSY5pNjdD2tGTU93TTnI",
-    refresh_token: "", // Authorize token
+  // 强烈建议使用您自己的 client_id 和 client_secret
+  client_id: "746239575955-oao9hkv614p8glrqpvuh5i8mqfoq145b.apps.googleusercontent.com", // 从 Google Cloud Console 获取的客户端 ID
+  client_secret: "u5a1CSY5pNjdD2tGTU93TTnI",
+  refresh_token: "", // 授权 token
   /*
-   * Set multiple drives to be displayed; add multiple by format
-   * [id]: Can be team disk id, subfolder id, or "root" (representing the root directory of personal disk);
-   * [name]: Displayed name
-   * [user]: Basic Auth username
-   * [pass]: Basic Auth password
-   * [protect_file_link]: Whether Basic Auth is used to protect the file link, the default value (when not set) is false, that is, the file link is not protected (for direct link download/external playback, etc.)
-   * The Basic Auth of each disk can be set separately. Basic Auth protects all folders/subfolders paths under this disk by default
-   * [Note] File links are not protected by default, which can facilitate direct link download/external playback;
-   * If you want to protect the file link, you need to set protect_file_link to true. If you want to perform external playback and other operations, you need to replace host with user:pass@host
-   * No Basic Auth disk is needed, just keep user and pass empty at the same time. (It can be set directly without setting)
-   * [Note] The search function is not supported for the disk whose id is set as the subfolder id (it does not affect other disks).
+   * 设置要显示的多个网盘；请按格式添加多个
+   * [id]: 可以是团队盘id、子文件夹id, 或者是 "root" (代表个人盘根目录);
+   * [name]: 显示的名称
+   * [user]: Basic Auth 用户名
+   * [pass]: Basic Auth 密码
+   * [protect_file_link]: 是否使用Basic Auth保护文件链接，默认值(不设置时)为false, 即不保护文件链接(可直链下载/外链播放等)
+   * 每个盘的Basic Auth可分别设置, Basic Auth保护此盘下所有文件夹/子文件夹的路径,
+   * [注意] 文件链接默认不保护, 可方便直链下载/外链播放;
+   * 若您想保护文件链接, 您需要设置 protect_file_link 为 true, 如果想进行外链播放等操作, 需要将 host 换成 user:pass@host
+   * 不需要Basic Auth的盘, 只需同时留空user和pass即可.(直接不设置也可以)
+   * [注意] id 设置为子文件夹id的盘, 不支持搜索功能(不影响其他盘).
    */
   roots: [
     {
@@ -40,78 +40,73 @@ var  authConfig  =  {
     },
   ],
   default_gd: 0,
-	/**
-	    * The number displayed on each page of the file list page. [The recommended setting is between 100 and 1000];
-	    * If the setting is greater than 1000, it will cause an error when requesting drive api;
-	    * If the set value is too small, it will cause the incremental loading of the scroll bar of the file list page (paged loading) to fail;
-	    * Another effect of this value is that if the number of files in the directory is greater than this setting value (that is, multiple pages are required), the results of the first directory listing will be cached.
-	    */
-  files_list_page_size: 50,
-	/**
-	    * The number displayed on each page of the search result page. [The recommended setting is between 50 and 1000];
-	    * If the setting is greater than 1000, it will cause an error when requesting drive api;
-	    * If the value set is too small, it will cause the incremental loading of the scroll bar of the search results page (paged loading) to fail;
-	    * The size of this value affects the response speed of search operations.
-	    */
+    /**
+     * 文件列表页面, 每页显示数量. [推荐设置范围 100 ~ 1000];
+     * 如果设置大于1000, 将导致请求drive api时出错;
+     * 如果设置过小, 将导致文件列表页面滚动条滚动增量加载(分页加载)体验不好;
+     * 此设置项的另一个作用是: 如果目录中文件数大于此设置值(即需要多页显示), 程序会将首次列出的目录结果缓存.
+     */
+  files_list_page_size: 200,
+    /**
+     * 搜索结果页面, 每页显示数量. [推荐设置范围 50 ~ 1000];
+     * 如果设置大于1000, 将导致请求drive api时出错;
+     * 如果设置过小, 将导致搜索结果页面滚动条滚动增量加载(分页加载)体验不好;
+     * 此设置项的大小会影响搜索操作的响应速度.
+     */
   search_result_list_page_size: 50,
-// Confirm that cors can be opened
+// 确定可以开启 cors 时, 启用此功能
   enable_cors_file_down: false,
-	/**
-	    * The basic auth above already includes the function of global protection in the disk. Therefore, the password in the .password file is no longer authenticated by default;
-	    * If on the basis of global authentication, you still need to separately verify the password in the .password file for some directories, set this option to true;
-	    * [Note] If the password verification of the .password file is enabled, every time the directory is listed, the overhead of querying whether the .password file exists in the directory will be added.
-	    */
+    /**
+     * 上述 basic_auth 已包含对全盘的保护功能. 因此, 默认不再对 .password 文件中的密码进行认证;
+     * 如果在全盘认证的基础上, 仍然需要对某些目录单独进行 .password 文件中的密码验证, 请将此选项设置为 true;
+     * [注意] 开启 .password 文件密码验证, 会额外增加列目录时查询目录下是否存在 .password 文件的开销.
+     */
   enable_password_file_verify: false,
 };
+
 var themeOptions = {
   cdn: "https://cdn.jsdelivr.net/gh/Aicirou/goindex-theme-acrou",
-// Theme version number
+  // 主题版本号。必须保持 "2.0.8" 以确保能正确加载主题文件。
   version: "2.0.8",
-//Optional default system language: en/zh-chs/zh-cht
+  // 可选的默认系统语言: en/zh-chs/zh-cht
   languages: "en",
   render: {
-		/**
-		      * Whether to render the HEAD.md file
-		      * Render HEAD.md file
-		      */
+    /**
+     * 是否渲染 HEAD.md 文件
+     */
     head_md: false,
-		/**
-		      * Whether to render the README.md file
-		      * Render README.md file
-		      */
+    /**
+     * 是否渲染 README.md 文件
+     */
     readme_md: false,
-		/**
-		      * Whether to render file/folder description
-		      * Render file/folder description or not
-		      */
+    /**
+     * 是否渲染文件/文件夹描述
+     */
     desc: false,
   },
-	/**
-	    * Video player options
-	    * Video player options
-	    */
+  /**
+   * 视频播放器选项
+   */
   video: {
-		/**
-		      * Player api (if not specified, the default player will be used)
-		      * Player api(Use default player if not specified)
-		      */
+    /**
+     * 播放器api (不指定则使用默认播放器)
+     */
     api: "",
     autoplay: true,
   },
-	/**
-	    * Audio player options
-	    * Audio player options
-	    */
+  /**
+   * 音频播放器选项
+   */
   audio: {},
 };
-// =======Options END=======
+// =======配置项结束=======
 
 /**
- * global functions
+ * 全局函数
  */
 const FUNCS = {
   /**
-	 * Converted into relatively safe search keywords for Google search lexicon
+     * 转换成Google搜索语法相对安全的搜索关键字
    */
   formatSearchKeyword: function(keyword) {
     let nothing = "";
@@ -125,21 +120,22 @@ const FUNCS = {
 };
 
 /**
- * global consts
+ * 全局常量
  * @type {{folder_mime_type: string, default_file_fields: string, gd_root_type: {share_drive: number, user_drive: number, sub_folder: number}}}
  */
 const CONSTS = new (class {
   default_file_fields =
-    "parents,id,name,mimeType,modifiedTime,createdTime,fileExtension,size";
+    "parents,id,name,mimeType,modifiedTime,createdTime,fileExtension,size,shortcutDetails"; // MOD: 添加 shortcutDetails 以获取快捷方式详情
   gd_root_type = {
     user_drive: 0,
     share_drive: 1,
     sub_folder: 2,
   };
   folder_mime_type = "application/vnd.google-apps.folder";
+  shortcut_mime_type = "application/vnd.google-apps.shortcut"; // ADD: 定义快捷方式的MIME类型
 })();
 
-// gd instances
+// gd实例数组
 var gds = [];
 
 function html(current_drive_order = 0, model = {}) {
@@ -187,7 +183,7 @@ addEventListener("fetch", (event) => {
 });
 
 /**
- * Fetch and log a request
+ * 处理请求
  * @param {Request} request
  */
 async function handleRequest(request) {
@@ -197,7 +193,7 @@ async function handleRequest(request) {
       await gd.init();
       gds.push(gd);
     }
-// This operation is parallel to improve efficiency
+// 并行执行以提高效率
     let tasks = [];
     gds.forEach((gd) => {
       tasks.push(gd.initRootType());
@@ -207,14 +203,14 @@ async function handleRequest(request) {
     }
   }
 
-	// Extract drive order from path
-	   // and get the corresponding gd instance according to drive order
+    // 从路径中提取网盘顺序
+       // 并根据顺序获取对应的gd实例
   let gd;
   let url = new URL(request.url);
   let path = decodeURI(url.pathname);
 
   /**
-* Redirect to the start page
+* 重定向到起始页
    * @returns {Response}
    */
   function redirectToIndexPage() {
@@ -226,11 +222,11 @@ async function handleRequest(request) {
 
   if (path == "/") return redirectToIndexPage();
   if (path.toLowerCase() == "/favicon.ico") {
-// You can find a favicon later
+// 以后可以找一个网站图标
     return new Response("", { status: 404 });
   }
 
-// Special command format
+// 特殊命令格式
   const command_reg = /^\/(?<num>\d+):(?<command>[a-zA-Z0-9]+)(\/.*)?$/g;
   const match = command_reg.exec(path);
   let command;
@@ -242,18 +238,18 @@ async function handleRequest(request) {
     } else {
       return redirectToIndexPage();
     }
-    // basic auth
+    // Basic Auth
     for (const r = gd.basicAuthResponse(request); r; ) return r;
     command = match.groups.command;
 
-// search for
+// 搜索
     if (command === "search") {
       if (request.method === "POST") {
-// search results
+// 搜索结果
         return handleSearch(request, gd);
       } else {
         const params = url.searchParams;
-// search page
+// 搜索页面
         return new Response(
           html(gd.order, {
             q: params.get("q") || "",
@@ -282,7 +278,7 @@ async function handleRequest(request) {
   path = path.replace(reg, (p1, p2) => {
     return p2 + "/";
   });
-// Expected path format
+// 预期的路径格式
   const common_reg = /^\/\d+:\/.*$/g;
   try {
     if (!path.match(common_reg)) {
@@ -299,8 +295,7 @@ async function handleRequest(request) {
     return redirectToIndexPage();
   }
 
-  // basic auth
-  // for (const r = gd.basicAuthResponse(request); r;) return r;
+  // Basic Auth
   const basic_auth_res = gd.basicAuthResponse(request);
   path = path.replace(gd.url_path_prefix, "") || "/";
   if (request.method == "POST") {
@@ -327,6 +322,10 @@ async function handleRequest(request) {
       return basic_auth_res || new Response("", { status: 404 });
     }
     let file = await gd.file(path);
+    // FIX: 增加文件存在性检查
+    if (!file) {
+        return new Response("File not found.", { status: 404 });
+    }
     let range = request.headers.get("Range");
     if (gd.root.protect_file_link && basic_auth_res) return basic_auth_res;
     const is_down = !(command && command == "down");
@@ -345,14 +344,14 @@ async function apiRequest(request, gd) {
     let deferred_pass = gd.password(path);
     let body = await request.text();
     body = JSON.parse(body);
-// This can increase the speed when listing the directory for the first time. The disadvantage is that if the password verification fails, the overhead of listing directories will still be incurred
+// 这可以在第一次列出目录时提高速度。缺点是如果密码验证失败，仍然会产生列出目录的开销
     let deferred_list_result = gd.list(
       path,
       body.page_token,
       Number(body.page_index)
     );
 
-    // check .password file, if `enable_password_file_verify` is true
+    // 检查 .password 文件, 如果 `enable_password_file_verify` 为 true
     if (authConfig["enable_password_file_verify"]) {
       let password = await gd.password(path);
       // console.log("dir password", password);
@@ -371,7 +370,7 @@ async function apiRequest(request, gd) {
   }
 }
 
-// process search
+// 处理搜索
 async function handleSearch(request, gd) {
   const option = {
     status: 200,
@@ -388,10 +387,10 @@ async function handleSearch(request, gd) {
 }
 
 /**
-* Process id2path
- * @param request Require id parameter
+* 处理 id2path
+ * @param request 需要 id 参数
  * @param gd
- * @returns {Promise<Response>} [Note] If the item represented by the id received from the front desk is not under the target gd disk, the response will return an empty string "" to the front desk
+ * @returns {Promise<Response>} [注意] 如果前台接收到的id所代表的item不在目标gd盘下,此响应将返回空字符串""给前台
  */
 async function handleId2Path(request, gd) {
   const option = {
@@ -406,44 +405,32 @@ async function handleId2Path(request, gd) {
 
 class googleDrive {
   constructor(authConfig, order) {
-    // Each disk corresponds to an order, corresponding to a gd instance
+    // 每个盘对应一个 order, 对应一个 gd 实例
     this.order = order;
     this.root = authConfig.roots[order];
     this.root.protect_file_link = this.root.protect_file_link || false;
     this.url_path_prefix = `/${order}:`;
     this.authConfig = authConfig;
-    // TODO: These cache invalidation refresh strategies can be formulated later
-    // path id
+    // TODO: 稍后可以制定这些缓存失效刷新策略
+    // 路径 id
     this.paths = [];
-    // path file
+    // 路径文件
     this.files = [];
-    // path pass
+    // 路径密码
     this.passwords = [];
-    // id <-> path
+    // id <-> 路径
     this.id_path_cache = {};
     this.id_path_cache[this.root["id"]] = "/";
     this.paths["/"] = this.root["id"];
-    /*if (this.root['pass'] != "") {
-            this.passwords['/'] = this.root['pass'];
-        }*/
-    // this.init();
   }
 
   /**
-   * Initial authorization; then get user_drive_real_root_id
+   * 初始授权；然后获取 user_drive_real_root_id
    * @returns {Promise<void>}
    */
   async init() {
     await this.accessToken();
-		/*await (async () => {
-		             // Only get 1 time
-		             if (authConfig.user_drive_real_root_id) return;
-		             const root_obj = await (gds[0] || this).findItemById('root');
-		             if (root_obj && root_obj.id) {
-		                 authConfig.user_drive_real_root_id = root_obj.id
-		             }
-		         })();*/
-		     // Wait for user_drive_real_root_id, only get it once
+    // 等待 user_drive_real_root_id, 只获取一次
     if (authConfig.user_drive_real_root_id) return;
     const root_obj = await (gds[0] || this).findItemById("root");
     if (root_obj && root_obj.id) {
@@ -452,7 +439,7 @@ class googleDrive {
   }
 
   /**
-   * Get the root directory type, set to root_type
+   * 获取根目录类型, 设置到 root_type
    * @returns {Promise<void>}
    */
   async initRootType() {
@@ -467,7 +454,36 @@ class googleDrive {
   }
 
   /**
-   * Returns a response that requires authorization, or null
+    * 处理单个快捷方式文件对象
+    * @param {object} file
+    * @returns {object}
+    */
+  _processShortcut(file) {
+      if (file && file.mimeType === CONSTS.shortcut_mime_type && file.shortcutDetails && file.shortcutDetails.targetId) {
+          return {
+              ...file,
+              id: file.shortcutDetails.targetId,
+              mimeType: file.shortcutDetails.targetMimeType,
+          };
+      }
+      return file;
+  }
+
+  /**
+    * 处理文件列表中的所有快捷方式
+    * @param {Array} files
+    * @returns {Array}
+    */
+  _processShortcuts(files) {
+      if (!files || files.length === 0) {
+          return files;
+      }
+      return files.map(file => this._processShortcut(file));
+  }
+
+
+  /**
+   * 返回需要授权的 response , 或者 null
    * @param request
    * @returns {Response|null}
    */
@@ -529,23 +545,23 @@ class googleDrive {
     let name = arr.pop();
     name = decodeURIComponent(name).replace(/\'/g, "\\'");
     let dir = arr.join("/") + "/";
-    // console.log(name, dir);
     let parent = await this.findPathId(dir);
-    // console.log(parent);
     let url = "https://www.googleapis.com/drive/v3/files";
     let params = { includeItemsFromAllDrives: true, supportsAllDrives: true };
     params.q = `'${parent}' in parents and name = '${name}' and trashed = false`;
     params.fields =
-      "files(id, name, mimeType, size ,createdTime, modifiedTime, iconLink, thumbnailLink)";
+      "files(id, name, mimeType, size ,createdTime, modifiedTime, iconLink, thumbnailLink, shortcutDetails)";
     url += "?" + this.enQuery(params);
     let requestOption = await this.requestOption();
     let response = await fetch(url, requestOption);
     let obj = await response.json();
-    // console.log(obj);
-    return obj.files[0];
+    if (!obj.files || obj.files.length === 0) {
+        return undefined;
+    }
+    return this._processShortcut(obj.files[0]);
   }
 
-// Cache through reqeust cache
+  // 通过请求缓存进行缓存
   async list(path, page_token = null, page_index = 0) {
     if (this.path_children_cache == undefined) {
       // { <path> :[ {nextPageToken:'',data:{}}, {nextPageToken:'',data:{}} ...], ...}
@@ -568,7 +584,7 @@ class googleDrive {
     let id = await this.findPathId(path);
     let result = await this._ls(id, page_token, page_index);
     let data = result.data;
-    // Cache for multiple pages
+    // 缓存多页
     if (result.nextPageToken && data.files) {
       if (!Array.isArray(this.path_children_cache[path])) {
         this.path_children_cache[path] = [];
@@ -583,8 +599,6 @@ class googleDrive {
   }
 
   async _ls(parent, page_token = null, page_index = 0) {
-    // console.log("_ls", parent);
-
     if (parent == undefined) {
       return null;
     }
@@ -593,7 +607,7 @@ class googleDrive {
     params.q = `'${parent}' in parents and trashed = false AND name !='.password'`;
     params.orderBy = "folder,name,modifiedTime desc";
     params.fields =
-      "nextPageToken, files(id, name, mimeType, size , modifiedTime, thumbnailLink, description)";
+      "nextPageToken, files(id, name, mimeType, size , modifiedTime, thumbnailLink, description, shortcutDetails)";
     params.pageSize = this.authConfig.files_list_page_size;
 
     if (page_token) {
@@ -605,32 +619,21 @@ class googleDrive {
     let response = await fetch(url, requestOption);
     obj = await response.json();
 
+    if (obj.files) {
+        obj.files = this._processShortcuts(obj.files);
+    }
+
     return {
       nextPageToken: obj.nextPageToken || null,
       curPageIndex: page_index,
       data: obj,
     };
-
-    /*do {
-            if (pageToken) {
-                params.pageToken = pageToken;
-            }
-            let url = 'https://www.googleapis.com/drive/v3/files';
-            url += '?' + this.enQuery(params);
-            let requestOption = await this.requestOption();
-            let response = await fetch(url, requestOption);
-            obj = await response.json();
-            files.push(...obj.files);
-            pageToken = obj.nextPageToken;
-        } while (pageToken);*/
   }
 
   async password(path) {
     if (this.passwords[path] !== undefined) {
       return this.passwords[path];
     }
-
-    // console.log("load", path, ".password", this.passwords[path]);
 
     let file = await this.file(path + ".password");
     if (file == undefined) {
@@ -646,9 +649,9 @@ class googleDrive {
   }
 
   /**
-   * Get share drive information by id
+   * 通过id获取share drive信息
    * @param any_id
-   * @returns {Promise<null|{id}|any>} Any abnormal situation returns null
+   * @returns {Promise<null|{id}|any>} 任何异常情况返回null
    */
   async getShareDriveObjById(any_id) {
     if (!any_id) return null;
@@ -664,7 +667,7 @@ class googleDrive {
   }
 
   /**
-   * search for
+   * 搜索
    * @returns {Promise<{data: null, nextPageToken: null, curPageIndex: number}>}
    */
   async search(origin_keyword, page_token = null, page_index = 0) {
@@ -683,7 +686,7 @@ class googleDrive {
     }
     let keyword = FUNCS.formatSearchKeyword(origin_keyword);
     if (!keyword) {
-      // Keyword is empty, return
+      // 关键字为空，返回
       return empty_result;
     }
     let words = keyword.split(/\s+/);
@@ -691,7 +694,7 @@ class googleDrive {
       "' AND name contains '"
     )}'`;
 
-    // For corpora, user is a personal disk, and drive is a team disk. Match driveId
+    // corpora可以是 user, drive, domain, allDrives. user为个人盘, drive为团队盘. 需匹配driveId
     let params = {};
     if (is_user_drive) {
       params.corpora = "user";
@@ -699,7 +702,7 @@ class googleDrive {
     if (is_share_drive) {
       params.corpora = "drive";
       params.driveId = this.root.id;
-      // This parameter will only be effective until June 1, 2020. Afterwards shared drive items will be included in the results.
+      // 此参数将于2020年6月1日后失效. 共享云端硬盘内容会统一包含在结果中.
       params.includeItemsFromAllDrives = true;
       params.supportsAllDrives = true;
     }
@@ -708,16 +711,18 @@ class googleDrive {
     }
     params.q = `trashed = false AND name !='.password' AND (${name_search_str})`;
     params.fields =
-      "nextPageToken, files(id, name, mimeType, size , modifiedTime, thumbnailLink, description)";
+      "nextPageToken, files(id, name, mimeType, size , modifiedTime, thumbnailLink, description, shortcutDetails)";
     params.pageSize = this.authConfig.search_result_list_page_size;
-    // params.orderBy = 'folder,name,modifiedTime desc';
 
     let url = "https://www.googleapis.com/drive/v3/files";
     url += "?" + this.enQuery(params);
-    // console.log(params)
     let requestOption = await this.requestOption();
     let response = await fetch(url, requestOption);
     let res_obj = await response.json();
+
+    if (res_obj.files) {
+        res_obj.files = this._processShortcuts(res_obj.files);
+    }
 
     return {
       nextPageToken: res_obj.nextPageToken || null,
@@ -726,39 +731,45 @@ class googleDrive {
     };
   }
 
-	/**
-	    * Get the file object of the parent folder of this file or folder upwards one by one. Note: it will be slow! ! !
-	    * Up to find the root directory of the current gd object (root id)
-	    * Only consider a single upward chain.
-	    * [Note] If the item represented by this id is not under the target gd disk, then this function will return null
-	    *
-	    * @param child_id
-	    * @param contain_myself
-	    * @returns {Promise<[]>}
-	    */
+    /**
+     * 逐个向上获取此文件或文件夹的父级文件夹的文件对象. 注意:会很慢!!!
+     * 最多向上查找至当前gd对象的根目录(root id)
+     * 只考虑单个向上链。
+     * [注]如果此id代表的item不在目标gd盘下,那么此方法将返回null
+     *
+     * @param child_id
+     * @param contain_myself
+     * @returns {Promise<[]>}
+     */
   async findParentFilesRecursion(child_id, contain_myself = true) {
     const gd = this;
     const gd_root_id = gd.root.id;
     const user_drive_real_root_id = authConfig.user_drive_real_root_id;
     const is_user_drive = gd.root_type === CONSTS.gd_root_type.user_drive;
 
-    // End goal id for bottom-up query
+    // 自下而上查询的终点id
     const target_top_id = is_user_drive ? user_drive_real_root_id : gd_root_id;
     const fields = CONSTS.default_file_fields;
 
-    // [{},{},...]
     const parent_files = [];
     let meet_top = false;
 
     async function addItsFirstParent(file_obj) {
       if (!file_obj) return;
+      if (file_obj.mimeType === CONSTS.shortcut_mime_type) {
+        // 如果是快捷方式，则从其目标开始查找
+        if(file_obj.shortcutDetails && file_obj.shortcutDetails.targetId) {
+            const new_file_obj = await gd.findItemById(file_obj.shortcutDetails.targetId);
+            await addItsFirstParent(new_file_obj);
+        }
+        return;
+      }
       if (!file_obj.parents) return;
       if (file_obj.parents.length < 1) return;
 
-      // ['','',...]
       let p_ids = file_obj.parents;
       if (p_ids && p_ids.length > 0) {
-        // its first parent
+        // 它的第一个父级
         const first_p_id = p_ids[0];
         if (first_p_id === target_top_id) {
           meet_top = true;
@@ -782,9 +793,9 @@ class googleDrive {
   }
 
   /**
-   * Get the path relative to the root directory of the disk
+   * 获取文件相对于本盘根目录的路径
    * @param child_id
-   * @returns {Promise<string>} [Note] If the item represented by this id is not in the target gd disk, then this method will return an empty string ""
+   * @returns {Promise<string>} [注]如果此id代表的item不在目标gd盘下,那么此方法将返回空字符串""
    */
   async findPathById(child_id) {
     if (this.id_path_cache[child_id]) {
@@ -795,7 +806,7 @@ class googleDrive {
     if (!p_files || p_files.length < 1) return "";
 
     let cache = [];
-    // Cache the path and id of each level found
+    // 缓存找到的各层级的路径和id
     p_files.forEach((value, idx) => {
       const is_folder =
         idx === 0 ? p_files[idx].mimeType === CONSTS.folder_mime_type : true;
@@ -815,14 +826,10 @@ class googleDrive {
       this.paths[obj.path] = obj.id;
     });
 
-    /*const is_folder = p_files[0].mimeType === CONSTS.folder_mime_type;
-        let path = '/' + p_files.map(it => it.name).reverse().join('/');
-        if (is_folder) path += '/';*/
-
     return cache[0].path;
   }
 
-  // Get file item according to id
+  // 根据id获取文件item
   async findItemById(id) {
     const is_user_drive = this.root_type === CONSTS.gd_root_type.user_drive;
     let url = `https://www.googleapis.com/drive/v3/files/${id}?fields=${
@@ -839,6 +846,7 @@ class googleDrive {
 
     let arr = path.trim("/").split("/");
     for (let name of arr) {
+        if (!name) continue;
       c_path += name + "/";
 
       if (typeof this.paths[c_path] == "undefined") {
@@ -851,14 +859,11 @@ class googleDrive {
         break;
       }
     }
-    // console.log(this.paths);
     return this.paths[path];
   }
 
   async _findDirId(parent, name) {
     name = decodeURIComponent(name).replace(/\'/g, "\\'");
-
-    // console.log("_findDirId", parent, name);
 
     if (parent == undefined) {
       return null;
@@ -866,20 +871,21 @@ class googleDrive {
 
     let url = "https://www.googleapis.com/drive/v3/files";
     let params = { includeItemsFromAllDrives: true, supportsAllDrives: true };
-    params.q = `'${parent}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${name}'  and trashed = false`;
-    params.fields = "nextPageToken, files(id, name, mimeType)";
+    params.q = `'${parent}' in parents and (mimeType = 'application/vnd.google-apps.folder' or mimeType = '${CONSTS.shortcut_mime_type}') and name = '${name}'  and trashed = false`;
+    params.fields = "nextPageToken, files(id, name, mimeType, shortcutDetails)";
     url += "?" + this.enQuery(params);
     let requestOption = await this.requestOption();
     let response = await fetch(url, requestOption);
     let obj = await response.json();
-    if (obj.files[0] == undefined) {
+    if (obj.files == undefined || obj.files.length === 0) {
       return null;
     }
-    return obj.files[0].id;
+    
+    const file = this._processShortcut(obj.files[0]);
+    return file.id;
   }
 
   async accessToken() {
-    console.log("accessToken");
     if (
       this.authConfig.expires == undefined ||
       this.authConfig.expires < Date.now()
@@ -894,7 +900,6 @@ class googleDrive {
   }
 
   async fetchAccessToken() {
-    console.log("fetchAccessToken");
     const url = "https://www.googleapis.com/oauth2/v4/token";
     const headers = {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -947,7 +952,6 @@ class googleDrive {
     return new Promise(function(resolve, reject) {
       let i = 0;
       setTimeout(function() {
-        console.log("sleep" + ms);
         i++;
         if (i >= 2) reject(new Error("i>=2"));
         else resolve(i);
