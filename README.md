@@ -1,4 +1,11 @@
-注意: 此脚本已优化，无论您提供的是文件夹ID还是指向该文件夹的快捷方式ID，它都能正确识别并进行遍历和搜索。
+核心优化 (针对快捷方式)
+此版本重点解决了原生 GoIndex 在处理文件夹快捷方式时的不足：
+
+快捷方式作为根目录: 您可以直接将一个指向文件夹的 快捷方式 ID 配置为一个独立的网盘根目录。脚本会自动解析并将其作为正常文件夹处理。
+
+修复快捷方式内搜索: 彻底解决了当使用快捷方式作为根目录时，搜索功能完全失效的问题。现在可以正常搜索到快捷方式目标文件夹内的所有文件和子文件夹。
+
+修复搜索结果跳转: 当您点击来自快捷方式文件夹内的搜索结果时，程序可以正确地跳转到文件所在的路径，而不会再出现错误。
 
 # 🍿[Google-Drive-Directory-Index](https://github.com/Aicirou/goindex-theme-acrou)
 Combining the power of [Cloudflare Workers](https://workers.cloudflare.com/) and [Google Drive](https://www.google.com/drive/) will allow you to index your Google Drive files on the browser.    
