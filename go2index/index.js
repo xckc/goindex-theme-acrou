@@ -1,6 +1,6 @@
 // =======配置项开始=======
 var  authConfig  =  {
-  siteName : "Chillx",  // 网站名称
+  siteName : "xckk",  // 网站名称
   version : "1.1.2" ,  // 程序版本，修改为“1.1.2”以匹配主题的检查，从而禁用更新提示
   theme: "acrou",
   // 强烈建议使用您自己的 client_id 和 client_secret
