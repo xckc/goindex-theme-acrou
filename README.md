@@ -7,6 +7,20 @@
 
 修复搜索结果跳转: 当您点击来自快捷方式文件夹内的搜索结果时，程序可以正确地跳转到文件所在的路径，而不会再出现错误。
 
+kv.js
+配置 KV 缓存 (性能优化的关键)
+创建 KV 命名空间:
+在 Cloudflare 仪表板中，转到 Workers & Pages -> KV。
+点击 创建命名空间 (Create a namespace)。
+输入一个命名空间名称，例如 GOINDEX_CACHE，然后点击 添加 (Add)。
+绑定 KV 到 Worker:
+回到您的 Worker (Workers & Pages -> 您的 Worker 名称)。
+点击 设置 (Settings) -> 变量 (Variables)。
+向下滚动到 KV 命名空间绑定 (KV Namespace Bindings)，点击 添加绑定 (Add binding)。
+变量名称 (Variable name): 必须填写 GD_INDEX_CACHE (这与代码中的名称对应，不能错)。
+KV 命名空间 (KV namespace): 选择您上一步创建的 GOINDEX_CACHE。
+点击 保存并部署 (Save and deploy)。
+
 # 🍿[Google-Drive-Directory-Index](https://github.com/Aicirou/goindex-theme-acrou)
 Combining the power of [Cloudflare Workers](https://workers.cloudflare.com/) and [Google Drive](https://www.google.com/drive/) will allow you to index your Google Drive files on the browser.    
 
