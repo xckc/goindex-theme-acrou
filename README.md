@@ -1,123 +1,75 @@
-# GoIndex-CF-Worker-Optimized
+# GoIndex 全方位安全配置指南
 
-这是一个基于 `goindex` 项目的 Cloudflare Worker 版本，经过了深度优化，旨在提供更强的**安全性**、更高的**性能**和更好的**稳定性**。
-
-它将您的 Google Drive 变身为一个易于浏览和分享的网盘目录网站，并完全运行在 Cloudflare 的免费服务上。
-
-![网页截图](https://i.loli.net/2021/11/19/lVwxKP2q3OFpYQI.png)
+这个版本的脚本将所有敏感信息——包括 API 凭证和网盘列表 (`roots`)——全部从代码中分离，改为使用 Cloudflare Workers 的**加密环境变量**来存储。这是官方推荐的、最安全、最灵活的部署方式。
 
 ---
 
-## ✨ 核心优化特性
+## 🚀 配置步骤
 
--   **🔒 更安全的凭证管理**：不再将 `client_id`、`client_secret`、`refresh_token` 以及 **`roots` 网盘配置** 硬编码在代码中。所有敏感信息都存储在 Cloudflare 的 **加密环境变量 (Secrets)** 中，杜绝了代码泄露导致的安全风险。
+您只需要在 Cloudflare 的管理后台完成几个简单的设置。
 
--   **⚡️ 更快的加载速度**：通过重构初始化逻辑，所有网盘驱动器仅在 Worker 实例启动时初始化一次。后续的用户请求直接使用已就绪的实例，大大减少了处理延迟。
+### 步骤 1：准备您的 API 凭证
 
--   **🗂️ 强大的 KV 缓存**：全面利用 Cloudflare KV 存储来缓存文件列表、文件元数据、搜索结果和路径解析。这显著降低了对 Google Drive API 的请求频率，避免了速率限制，并极大地提升了浏览速度。
-
--   **🦾 更稳健的逻辑**：优化了对 Google Drive 快捷方式 (Shortcuts) 的处理，能正确解析其目标并进行索引。同时增强了错误处理机制，让问题排查更轻松。
-
--   **🔎 优化的搜索功能**：为不同类型的驱动器（个人盘、团队盘、子文件夹）提供了更高效的搜索策略。
-
----
-
-## 🚀 部署指南
-
-部署过程非常简单，仅需三个步骤。
-
-### 步骤 1：获取 Google Drive API 凭证
-
-您需要准备三个关键凭证：
+请确保您已经拥有以下三个由 Google API 控制台生成的凭证：
 1.  `CLIENT_ID`
 2.  `CLIENT_SECRET`
 3.  `REFRESH_TOKEN`
 
-如果您不清楚如何获取，可以参考网络上的相关教程，例如 [这篇教程](https://www.hostloc.com/thread-579999-1-1.html) 或搜索“Google Drive API refresh_token 获取”。
+**重要提示：** 如果您遇到任何问题，请首先尝试**重新生成一套全新的凭证**，因为 `refresh_token` 可能会过期。
 
-### 步骤 2：配置 Cloudflare Worker
+### 步骤 2：在 Cloudflare Worker 中设置环境变量
 
 1.  登录到您的 Cloudflare 账户。
 2.  在左侧菜单中，进入 `Workers & Pages`。
-3.  点击 `Create application` > `Create Worker`，然后为您的 Worker 命名（例如 `my-drive-indexer`）并部署。
+3.  选择您要配置的 Worker，进入其管理页面。
+4.  点击 `Settings` (设置) -> `Variables` (变量)。
+5.  在 `Environment Variables` (环境变量) 部分，点击 `Add variable` (添加变量)。
 
-4.  **绑定 KV 命名空间 (必须)**
-    -   返回 Worker 概览页面，点击 `Settings` > `KV`。
-    -   点击 `Create a namespace`，输入一个名称，例如 `GD_INDEX_CACHE`。
-    -   返回 Worker 的 `Settings` 选项卡，在 `KV Namespace Bindings` 下点击 `Add binding`。
-    -   将 `Variable name` 设置为 `GD_INDEX_CACHE`，并选择您刚刚创建的 KV 命名空间。
+6.  **添加四个加密变量**：
+    您需要重复四次“添加变量”操作，并**确保每次都勾选 `Encrypt` (加密)** 选项，以保护您的凭证安全。
 
-5.  **设置加密环境变量 (最重要的一步)**
-    -   在 Worker 的 `Settings` > `Variables` 选项卡下，找到 `Environment Variables` 部分。
-    -   点击 `Add variable`，**并确保勾选 `Encrypt`**，将其变为安全的 Secret。
-    -   依次添加以下变量：
-        -   **`CLIENT_ID`**: 填入您的 Client ID。
-        -   **`CLIENT_SECRET`**: 填入您的 Client Secret。
-        -   **`REFRESH_TOKEN`**: 填入您的 Refresh Token。
-        -   **`DRIVE_ROOTS`**: (推荐) 用于安全存储您的网盘配置。将您的 `roots` 数组转换为 JSON 字符串后填入。
+    | 变量名 (Variable name) | 值 (Value) |
+    | :--- | :--- |
+    | `CLIENT_ID` | 粘贴您的 Client ID |
+    | `CLIENT_SECRET` | 粘贴您的 Client Secret |
+    | `REFRESH_TOKEN` | 粘贴您的 Refresh Token |
+    | `DRIVE_ROOTS` | 粘贴您的网盘配置 (JSON 字符串格式) |
 
     ![环境变量设置示例](https://i.loli.net/2021/11/19/C19k3f5Y8h7cR2U.png)
 
-    **`DRIVE_ROOTS` 格式示例:**
+    **`DRIVE_ROOTS` 格式详解 (最关键的一步):**
 
-    您需要将代码中 `roots` 数组的内容转换为一个**没有换行的 JSON 字符串**。例如，以下配置：
+    您需要将代码中 `roots` 数组的内容转换为一个**没有换行、严格符合 JSON 语法的字符串**。
+
+    例如，如果您想配置以下两个网盘：
     ```javascript
-    roots: [{
-        id: "YOUR_TEAMDRIVE_ID",
-        name: "TeamDrive",
-        user: "user1",
-        pass: "pass123"
-      }, {
+    // 这是一个 JavaScript 对象，不能直接粘贴
+    roots: [
+      {
+        id: "1zdXoyTm6rgVhgbN1nuJ2HcXpW6TMNklZ",
+        name: "我的团队盘",
+        user: "gd",
+        pass: "1995"
+      },
+      {
         id: "root",
-        name: "PrivateDrive"
-      }]
+        name: "我的个人盘"
+      }
+    ]
     ```
-    应转换为以下**单行字符串**后，再填入 `DRIVE_ROOTS` 环境变量的值中：
+    您需要将其转换为以下**单行字符串**，然后填入 `DRIVE_ROOTS` 环境变量的值中：
     ```
-    [{"id":"YOUR_TEAMDRIVE_ID","name":"TeamDrive","user":"user1","pass":"pass123"},{"id":"root","name":"PrivateDrive"}]
+    [{"id":"1zdXoyTm6rgVhgbN1nuJ2HcXpW6TMNklZ","name":"我的团队盘","user":"gd","pass":"1995"},{"id":"root","name":"我的个人盘"}]
     ```
-    **注意：** 如果设置了此环境变量，它将**覆盖**代码中预留的 `roots` 备用配置。
+    **检查清单：**
+    * 所有键（如 "id", "name"）和字符串值都必须用 **双引号 `"`** 包围。
+    * 整个内容必须在**一行**内，不能有换行。
+    * 对象与对象之间用逗号 `,` 分隔。
+    * 数组的最后一个对象 `}` 后面**不能**有逗号。
 
 ### 步骤 3：部署代码
 
-1.  回到 Worker 的 `Code` 界面（点击 `Edit code`）。
-2.  **将 `goindex-worker-optimized.js` 文件中的全部代码** 复制并粘贴到 Cloudflare 的在线编辑器中，完全覆盖原有代码。
-3.  （可选）如果您不想使用环境变量来配置 `roots`，也可以直接修改代码中的 `authConfig.roots` 备用配置。
-4.  点击 `Deploy` 保存并部署。
+1.  将 `goindex-worker-secure-final.js` 文件中的代码部署到您的 Worker。
+2.  点击 `Deploy` (部署) 按钮。
 
-**恭喜！** 您的 Google Drive 索引网站现在已经成功部署。
-
----
-
-## ⚙️ 详细配置说明
-
-### `authConfig`
-
-| 参数 | 说明 | 示例 |
-| --- | --- | --- |
-| `siteName` | 网站左上角显示的名称。 | `"My Drive"` |
-| `theme` | 使用的主题，通常保持 `"acrou"`。 | `"acrou"` |
-| `enable_kv_cache` | 是否启用 KV 缓存。**强烈建议保持 `true`**。 | `true` |
-| `kv_cache_ttl` | KV 缓存的有效期（秒）。 | `3600` (1小时) |
-| `roots` | 要挂载的驱动器/文件夹列表（数组）。**建议通过 `DRIVE_ROOTS` 环境变量配置。** | ` ` |
-| `default_gd` | 默认显示的 `roots` 数组索引。 | `0` (显示第一个) |
-| `files_list_page_size` | 文件夹列表每页显示的项目数。 | `200` |
-| `search_result_list_page_size` | 搜索结果每页显示的项目数。 | `50` |
-| `enable_password_file_verify` | 是否启用目录下的 `.password` 文件保护。 | `false` |
-
-### `themeOptions`
-
-此部分用于配置前端主题的外观和功能，通常无需修改。
-
-| 参数 | 说明 |
-| --- | --- |
-| `cdn` | 主题静态文件的 CDN 地址。 |
-| `version` | 主题的版本号。 |
-| `languages` | 默认界面语言 (`en`, `zh-chs`, `zh-cht`)。 |
-| `render` | 控制是否渲染 `HEAD.md` 和 `README.md` 文件。 |
-| `video` / `audio` | 内置播放器的相关配置。 |
-
----
-## 致谢
-
-此项目基于原始 `goindex` 项目及其社区贡献者的辛勤工作。本次优化旨在使其在 Cloudflare Workers 环境下更安全、更高效地运行。
+**完成！** 您的 Worker 现在会从安全的环境变量中读取所有配置，代码本身干净且通用。
