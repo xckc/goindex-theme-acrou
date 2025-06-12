@@ -8,7 +8,7 @@
 
 // =======配置项开始 (Configuration Start)=======
 const authConfig = {
-    siteName: "Chillx",     // 网站名称 (Site Name)
+    siteName: "xckk",     // 网站名称 (Site Name)
     version: "1.1.2",      // 程序版本，以禁用更新提示 (Program version to disable update checks)
     theme: "acrou",
 
