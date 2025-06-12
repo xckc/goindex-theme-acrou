@@ -1,4 +1,4 @@
-
+注意: 此脚本已优化，无论您提供的是文件夹ID还是指向该文件夹的快捷方式ID，它都能正确识别并进行遍历和搜索。
 
 # 🍿[Google-Drive-Directory-Index](https://github.com/Aicirou/goindex-theme-acrou)
 Combining the power of [Cloudflare Workers](https://workers.cloudflare.com/) and [Google Drive](https://www.google.com/drive/) will allow you to index your Google Drive files on the browser.    
