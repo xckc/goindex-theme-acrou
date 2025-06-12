@@ -46,10 +46,10 @@
     // 这是一个 JavaScript 对象，不能直接粘贴
     roots: [
       {
-        id: "1zdXoyTm6rgVhgbN1nuJ2HcXpW6TMNklZ",
+        id: "AAAA",
         name: "我的团队盘",
         user: "gd",
-        pass: "1995"
+        pass: "BB"
       },
       {
         id: "root",
@@ -59,7 +59,7 @@
     ```
     您需要将其转换为以下**单行字符串**，然后填入 `DRIVE_ROOTS` 环境变量的值中：
     ```
-    [{"id":"1zdXoyTm6rgVhgbN1nuJ2HcXpW6TMNklZ","name":"我的团队盘","user":"gd","pass":"1995"},{"id":"root","name":"我的个人盘"}]
+    [{"id":"AAAA","name":"我的团队盘","user":"gd","pass":"BB"},{"id":"root","name":"我的个人盘"}]
     ```
     **检查清单：**
     * 所有键（如 "id", "name"）和字符串值都必须用 **双引号 `"`** 包围。
