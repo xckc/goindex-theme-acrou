@@ -1,1 +1,0 @@
-(window["webpackJsonp"]=window["webpackJsonp"]||[]).push([["chunk-2d225416"],{e42c:function(e,r,n){"use strict";n.r(r);var u=function(){var e=this,r=e._self._c;return r("div",[r("bread-crumb",{ref:"breadcrumb"}),r("router-view")],1)},c=[],t=n("2db9"),a={components:{BreadCrumb:t["default"]}},d=a,o=n("2877"),b=Object(o["a"])(d,u,c,!1,null,null,null);r["default"]=b.exports}}]);
