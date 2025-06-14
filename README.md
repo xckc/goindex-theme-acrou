@@ -1,5 +1,6 @@
 # 描述
-goindex-worker-secure-final.js可以用，cleanServerCache.js想加个按钮手动清空KV缓存，暂未成功。
+goindex-worker-secure-final.js可以用，使用的主题还是原主题的。
+cleanServerCache.js想加个按钮手动清空KV缓存，貌似要改主题才能支持，暂未成功。
 
 # GoIndex-CF-Worker 终极优化版
 
