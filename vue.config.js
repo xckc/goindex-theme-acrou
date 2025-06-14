@@ -39,13 +39,13 @@ module.exports = {
 
   chainWebpack: config => {
     // ---------------------------------------------------------------------
-    // 最终修正：强制 Webpack 只生成一个文件
+    // 最终修正：强制 Webpack 只生成一个文件，解决文件名冲突问题
     // ---------------------------------------------------------------------
     
     // 1. 移除默认的代码分割策略
     config.optimization.delete('splitChunks');
     
-    // 2. 使用插件强制所有代码合并到一个块 (chunk) 中
+    // 2. [核心修改] 使用插件强制所有代码合并到一个块 (chunk) 中
     config
       .plugin('limit-chunk-count')
       .use(webpack.optimize.LimitChunkCountPlugin, [{
