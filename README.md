@@ -1,3 +1,5 @@
+# goindex-worker-secure-final.js、kv.js可以用，cleanServerCache.js想加个按钮手动清空KV缓存，暂未成功。
+
 # GoIndex-CF-Worker 终极优化版
 
 这是一个经过深度优化的 Google Drive 目录索引程序的 Cloudflare Worker 版本。它基于原始 GoIndex 项目，并整合了多项性能和功能增强，旨在提供更快、更稳定、更易于维护的体验。
