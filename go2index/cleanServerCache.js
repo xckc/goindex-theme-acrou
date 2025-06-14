@@ -41,7 +41,7 @@ try {
 var themeOptions = {
   // [重要] 请将这里的 CDN 地址替换为您自己托管的新主题地址！
   // [IMPORTANT] Please replace the CDN URL here with your own hosted theme address!
-  cdn: "https://cdn.jsdelivr.net/gh/Aicirou/goindex-theme-acrou",
+  cdn: "https://cdn.jsdelivr.net/gh/xckc/goindex-theme-acrou",
   version: "2.0.8",
   languages: "en",
   render: {
