@@ -57,5 +57,13 @@
   "error": {
     "shortcut_not_down": "快捷方式无法打开/下载",
     "401": "未授权，请登录"
-  }
+  },
+  "clearCache": {
+    "title": "清理云盘缓存",
+    "prompt": "请输入管理员密码",
+    "secretRequired": "必须输入密码。",
+    "confirm": "这将清理Google Drive的文件列表缓存，下次访问时会强制刷新。确定要继续吗？",
+    "success": "缓存清理成功！",
+    "failed": "缓存清理失败，请检查密码或Worker日志。"
+   }
 }

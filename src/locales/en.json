@@ -57,5 +57,13 @@
   "error": {
     "shortcut_not_down": "Shortcut can't open/download",
     "401": "Unauthorized, please login"
-  }
+  },
+  "clearCache": {
+    "title": "Clear GDrive Cache",
+    "prompt": "Please enter the admin password",
+    "secretRequired": "Password is required.",
+    "confirm": "This will clear the GDrive file list cache, forcing a refresh on next load. Continue?",
+    "success": "Cache cleared successfully!",
+    "failed": "Cache clearing failed. Check password or worker logs."
+   }
 }
