@@ -1,13 +1,20 @@
-// vue.config.js (v5 - 最终修正版)
+// vue.config.js (v6 - 最终修正版)
 const path = require("path");
 
 function resolve(dir) {
   return path.join(__dirname, dir);
 }
 
+// ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+// ▼▼▼ [重要] 请将这里的 URL 替换为您自己的、带版本号的 jsDelivr 地址！ ▼▼▼
+// ▼▼▼ 例如: 'https://cdn.jsdelivr.net/gh/xckc/goindex-theme-acrou@v1.0.0/'    ▼▼▼
+const CDN_URL = 'https://cdn.jsdelivr.net/gh/xckc/goindex-theme-acrou@v1.0.2/';
+// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 module.exports = {
-  // 关键：设置为相对路径，确保所有资源引用正确
-  publicPath: './',
+  // 关键：直接使用您的 CDN 地址作为公共路径
+  publicPath: process.env.NODE_ENV === 'production' ? CDN_URL : '/',
+
   // 保留您必需的配置
   transpileDependencies: [
     'vue-plyr',
@@ -20,12 +27,13 @@ module.exports = {
   css: {
     loaderOptions: {
       sass: {
-        additionalData: `$cdnPath: "/";` 
+        // 将 $cdnPath 设置为您自己的 CDN 地址
+        additionalData: `$cdnPath: "${CDN_URL}";` 
       },
     },
   },
   chainWebpack: config => {
-    // [最终修正] 恢复路径别名 (alias) 配置
+    // 恢复路径别名 (alias) 配置
     config.resolve.alias
       .set("@", resolve("src"))
       .set("@api", resolve("src/api"))
