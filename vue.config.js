@@ -38,11 +38,17 @@ const cdn = {
 module.exports = {
   publicPath,
   lintOnSave: true,
+  // VVVV 这是唯一需要新添加的部分 VVVV
+  // 告诉 Babel 去转译这两个包
+  transpileDependencies: [
+    'vue-plyr',
+    'plyr'
+  ],
   css: {
     loaderOptions: {
       // Set scss common variable file
       sass: {
-        prependData: `$cdnPath: "${isProd ? cdnPath : "/"}";`,
+        additionalData: `$cdnPath: "${isProd ? cdnPath : "/"}";`,
       },
     },
   },
