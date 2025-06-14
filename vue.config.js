@@ -1,23 +1,19 @@
-// vue.config.js (v6 - 终极修正版)
+// vue.config.js (v7 - 终极完整版)
 const path = require("path");
-
-// ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-// ▼▼▼ [重要] 请将这里的 URL 替换为您自己的、不带版本号的基础地址！ ▼▼▼
-// ▼▼▼ 例如: 'https://cdn.jsdelivr.net/gh/xckc/goindex-theme-acrou'      ▼▼▼
-const GITHUB_REPO_URL = 'https://cdn.jsdelivr.net/gh/xckc/goindex-theme-acrou';
-// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
-const pkg = require("./package.json");
-const isProd = process.env.NODE_ENV === 'production';
-const publicPath = isProd ? `${GITHUB_REPO_URL}@${pkg.version}/` : '/';
 
 function resolve(dir) {
   return path.join(__dirname, dir);
 }
 
+// ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+// ▼▼▼ [重要] 请将这里的 URL 替换为您自己的、带版本号的最终 jsDelivr 地址！ ▼▼▼
+// ▼▼▼ 例如: 'https://cdn.jsdelivr.net/gh/xckc/goindex-theme-acrou@v1.0.2/'       ▼▼▼
+const DEPLOY_URL = 'https://cdn.jsdelivr.net/gh/xckc/goindex-theme-acrou@v1.0.4/';
+// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 module.exports = {
   // 关键：直接使用您的完整 CDN 地址作为公共路径
-  publicPath: publicPath,
+  publicPath: process.env.NODE_ENV === 'production' ? DEPLOY_URL : '/',
 
   // 保留您必需的配置
   transpileDependencies: [
@@ -28,11 +24,11 @@ module.exports = {
   filenameHashing: false,
   // 禁用 map 文件，减小体积
   productionSourceMap: false,
+  // [最终修正] 恢复 CSS loader options 来定义 $cdnPath 变量
   css: {
     loaderOptions: {
       sass: {
-        // 将 $cdnPath 设置为您自己的 CDN 地址
-        additionalData: `$cdnPath: "${publicPath}";` 
+        additionalData: `$cdnPath: "${process.env.NODE_ENV === 'production' ? DEPLOY_URL : '/'}";` 
       },
     },
   },
