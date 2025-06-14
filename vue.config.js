@@ -1,5 +1,6 @@
 const path = require("path");
-// const cdnDependencies = require("./dependencies-cdn"); // 不再需要
+// 保留原始依赖文件，但我们会在下面禁用它
+const cdnDependencies = require("./dependencies-cdn"); 
 const BuildAppJSPlugin = require("./buildAppJSPlugin");
 const CompressionWebpackPlugin = require("compression-webpack-plugin");
 const { set } = require("lodash");
@@ -8,31 +9,24 @@ function resolve(dir) {
   return path.join(__dirname, dir);
 }
 
-// add environment variable
 process.env.VUE_APP_VERSION = require("./package.json").version;
 process.env.VUE_APP_G2INDEX_VERSION = require("./package.json").g2index;
-
-process.env.VUE_APP_CDN_PATH =
-  process.env.VUE_APP_CDN_PATH.replace(
-    "@master",
-    "@v" + process.env.VUE_APP_VERSION
-  ) || "/";
+process.env.VUE_APP_CDN_PATH = process.env.VUE_APP_CDN_PATH.replace("@master", "@v" + process.env.VUE_APP_VERSION) || "/";
 
 let publicPath = process.env.VUE_APP_CDN_PATH || "/";
 let cdnPath = process.env.VUE_APP_CDN_PATH;
 const isProd = process.env.NODE_ENV === "production";
 
-// 注释掉外部依赖配置
+// 我们不再需要这个 externals 对象，因为所有东西都要打包
 // let externals = {};
 // cdnDependencies.forEach((item) => {
 //   externals[item.name] = item.library;
 // });
 
-// 注释掉 cdn 变量
-// const cdn = {
-//   css: cdnDependencies.map((e) => e.css).filter((e) => e),
-//   js: cdnDependencies.map((e) => e.js).filter((e) => e),
-// };
+const cdn = {
+   css: cdnDependencies.map((e) => e.css).filter((e) => e),
+   js: cdnDependencies.map((e) => e.js).filter((e) => e),
+};
 
 module.exports = {
   publicPath,
@@ -42,7 +36,7 @@ module.exports = {
     'vue-plyr',
     'plyr'
   ],
-  // 新增：禁用文件名哈希，确保输出文件名固定
+  // 新增：禁用文件名哈希，确保输出文件名固定为 app.js, chunk-vendors.js 等
   filenameHashing: false,
   css: {
     loaderOptions: {
@@ -70,10 +64,11 @@ module.exports = {
   },
 
   chainWebpack: (config) => {
-    // 保留此插件，但它的作用会被我们的修改覆盖
+    // 保留此插件
     config.plugin("BuildAppJSPlugin").use(BuildAppJSPlugin);
 
-    // 注释掉注入CDN的逻辑
+    // **关键修改**：我们不再让它注入CDN，而是让它使用正常的打包流程
+    // 因此注释掉下面的 tap 调用
     /*
     config.plugin("html").tap((options) => {
       if (isProd) {
@@ -106,7 +101,9 @@ module.exports = {
         .use(require("webpack-bundle-analyzer").BundleAnalyzerPlugin);
     }
   },
+
   productionSourceMap: false,
+
   devServer: {
     publicPath,
     proxy: {
@@ -120,6 +117,7 @@ module.exports = {
       },
     },
   },
+
   pluginOptions: {
     i18n: {
       locale: "zh-chs",
@@ -129,3 +127,4 @@ module.exports = {
     },
   },
 };
+
