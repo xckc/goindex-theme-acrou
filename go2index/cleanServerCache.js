@@ -80,11 +80,11 @@ function html(current_drive_order = 0, model = {}) {
  <title>${authConfig.siteName}</title>
  <style>@import url(${themeOptions.cdn}@${themeOptions.version}/dist/style.min.css);</style>
  <script>
-    window.gdconfig = JSON.parse('${JSON.stringify({ version: authConfig.version, themeOptions: themeOptions, })}');
-    window.themeOptions = JSON.parse('${JSON.stringify(themeOptions)}');
-    window.gds = JSON.parse('${JSON.stringify(authConfig.roots.map((it) => it.name))}');
-    window.MODEL = JSON.parse('${JSON.stringify(model)}');
-    window.current_drive_order = ${current_drive_order};
+   window.gdconfig = JSON.parse('${JSON.stringify({ version: authConfig.version, themeOptions: themeOptions, })}');
+   window.themeOptions = JSON.parse('${JSON.stringify(themeOptions)}');
+   window.gds = JSON.parse('${JSON.stringify(authConfig.roots.map((it) => it.name))}');
+   window.MODEL = JSON.parse('${JSON.stringify(model)}');
+   window.current_drive_order = ${current_drive_order};
  </script>
  </head>
  <body>
@@ -757,8 +757,11 @@ class googleDrive {
             filtered_files.forEach(file => {
                 if (file.id && file.path) {
                     this.id_path_cache[file.id] = file.path;
-                    const id2pathCacheKey = `id2path:${this.order}:${file.id}`;
-                    this._kv_put(id2pathCacheKey, { path: file.path });
+                    // ========= FIX 1: UNIFY CACHE KEY =========
+                    // 使用与 findPathById 一致的缓存键和格式
+                    const pathByIdCacheKey = `path_by_id:${this.order}:${file.id}`;
+                    this._kv_put(pathByIdCacheKey, file.path);
+                    // ========= END FIX 1 =========
                 }
             });
 
@@ -795,8 +798,18 @@ class googleDrive {
         let requestOption = await this.requestOption();
         let response = await fetch(url, requestOption);
         let res_obj = await response.json();
+
         if (res_obj.files) {
             res_obj.files = this._processShortcuts(res_obj.files);
+
+            // ========= FIX 2: PRE-FETCH PATHS FOR SEARCH RESULTS =========
+            // 主动解析并缓存所有搜索结果的路径
+            // 这会使搜索本身变慢，但能确保链接在第一次点击时就有效
+            if (res_obj.files.length > 0) {
+                const pathResolutions = res_obj.files.map(file => this.findPathById(file.id));
+                await Promise.all(pathResolutions);
+            }
+            // ========= END FIX 2 =========
         }
 
         search_result = {
