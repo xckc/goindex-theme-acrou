@@ -1,143 +1,110 @@
+# GoIndex-CF-Worker 优化版
 
+基于 https://github.com/Aicirou/goindex-theme-acrou ，使用gemini进行优化。
 
-# 🍿[Google-Drive-Directory-Index](https://github.com/Aicirou/goindex-theme-acrou)
-Combining the power of [Cloudflare Workers](https://workers.cloudflare.com/) and [Google Drive](https://www.google.com/drive/) will allow you to index your Google Drive files on the browser.    
+这是一个功能增强版的 GoIndex Cloudflare Worker 脚本。它不仅提供了 Google Drive 文件的基础索引功能，还集成了 `acrou` 主题、强大的 KV 缓存机制以及一个简单易用的后台管理面板，用于手动清理缓存。
 
-[go2index/index.js](https://github.com/Aicirou/goindex-theme-acrou/blob/main/go2index/index.js) is the content of the Workers script.  
+此脚本经过优化，将所有敏感凭证（如 API 密钥和云盘列表）从代码中移除，通过 Cloudflare 的环境变量进行安全加载，极大地提升了安全性。
 
-This theme's goindex is currently based on [yanzai/goindex](https://github.com/yanzai/goindex/).
-## Demo  
+## ✨ 功能特性
 
-🚀 Go to: [https://chill.aicirou.workers.dev/](https://chill.aicirou.workers.dev/) 
+* **安全配置**：所有敏感信息（`client_id`, `client_secret`, `refresh_token`, `roots`, `ADMIN_PASS`）均通过 Cloudflare 环境变量加载，避免硬编码在代码中。
+* **强大的 KV 缓存**：通过集成 Cloudflare KV，大幅提升文件和目录列表的加载速度，并降低 Google Drive API 的请求频率。缓存的 TTL (Time-To-Live) 可自定义。
+* **后台管理面板**：内置一个简洁的管理页面（通过 `/admin` 访问），可以一键清理所有或单个云盘的 KV 缓存。
+* **灵活的后台权限**：
+    * 可以直接访问 `/admin` 进入管理面板，无需输入特定命令。
+    * 可通过 `require_admin_password_for_clear` 配置项，自由选择清理缓存时是否需要输入管理员密码。
+    * **安全机制**：当 `require_admin_password_for_clear` 设置为 `true` (默认值) 时，**必须**配置 `ADMIN_PASS` 环境变量，否则后台功能将自动禁用以确保安全。如果此项设置为 `false`，则无需密码即可访问和清理。
+* **多云盘/团队盘/子目录支持**：可以同时挂载多个个人云盘、团队盘，甚至是指定文件夹作为根目录。
+* **Acrou 主题集成**：默认使用美观且功能丰富的 `acrou` 主题，支持视频和音频文件的在线预览。
+* **快捷方式解析**：能够自动解析 Google Drive 中的快捷方式（shortcuts），直接展示其指向的目标文件或文件夹。
+* **懒加载机制**：仅在访问特定云盘时才初始化其实例，优化了首次加载性能和资源占用。
 
-🛠 Quick Development: [here/](https://github.com/Aicirou/goindex-theme-acrou/edit/main/README.md#quick-deployment)
+## 🚀 部署与配置
 
-## ✨Features
+部署此 Worker 需要一个 Cloudflare 账户，并完成以下步骤：
 
-- [x] 👑 Page-level caching,browser forward and backward without reloading (MAC users have a better experience with the trackpad)
-- [x] 🗂 Multi drive switching
-- [x] 🔐 Http Basic Auth
-- [x] 🎨 Grid view mode(File Preview)
-- [x] 🎯 Paging load
-- [x] 🌐 I18n(multi-language)
-- [x] 🛠 Markdown/Html render (Maybe it can be your blog)
-- [x] 🖥 Video Online(.vtt subtitle)
-- [x] 🕹 Support for custom video player (API)
-- [x] 🎧 Audio Online
-- [x] 🚀 Faster speed
+### 步骤 1: 创建 Worker 和 KV 命名空间
 
-## TODO
+1.  在 Cloudflare 控制台中，进入 `Workers 和 Pages` -> `KV`。
+2.  创建一个新的 KV 命名空间，例如命名为 `GD_INDEX_CACHE`。
+3.  进入 `Workers 和 Pages` -> `概述` -> `创建应用程序` -> `创建 Worker`。
+4.  为您的 Worker 命名，然后点击“部署”。
 
-- [ ] More file format preview
-- [ ] Let goindex be more than just a directory index
+### 步骤 2: 绑定 KV 命名空间
 
-## Quick Deployment
+1.  进入新创建的 Worker 的设置页面 (`Settings` -> `Variables`)。
+2.  在 “KV 命名空间绑定” (`KV Namespace Bindings`) 部分，点击 `添加绑定`。
+3.  将**变量名称**设置为 `GD_INDEX_CACHE`。
+4.  在 **KV 命名空间**下拉菜单中，选择您在第一步创建的命名空间。
+5.  保存并部署 (`Save and deploy`)。
 
-1. Open the following link
+### 步骤 3: 配置环境变量
 
-- https://goindex-builder-acrou.glitch.me
+在 Worker 的设置页面 (`Settings` -> `Variables`) 的 “环境变量” (`Environment Variables`) 部分，点击 `添加变量` 来设置以下**加密**变量：
 
-2. Auth and get the code
-3. Deploy the code to [Cloudflare Workers](https://www.cloudflare.com/)
+* `CLIENT_ID`: 你的 Google API Client ID。
+* `CLIENT_SECRET`: 你的 Google API Client Secret。
+* `REFRESH_TOKEN`: 你的 Google API Refresh Token。
+* `ADMIN_PASS`: 你的后台管理员密码（例如 `mysecretpassword`）。
+* `DRIVE_ROOTS`: **\[重要]** 你的云盘配置列表，必须是有效的 JSON 数组格式。
 
-## Manual Deployment  
+**`DRIVE_ROOTS` 格式示例：**
 
-1. Open [Google Drive API](https://console.developers.google.com/apis/api/drive.googleapis.com/overview)
-2. Create a [OAuth client ID](https://console.developers.google.com/apis/credentials/oauthclient)
-3. Install [rclone](https://rclone.org/downloads/) software locally
-4. Get `refresh_token ` with `rclone`
-5. Download `index.js` in https://github.com/Aicirou/goindex-theme-acrou/tree/master/go2index and replace `client_id`,`client_secret`,`refresh_token` for what you just got.
-6. Deploy the code to [Cloudflare Workers](https://www.cloudflare.com/)
+```json
+[
+  {
+    "id": "root",
+    "name": "个人云盘",
+    "user": "",
+    "pass": ""
+  },
+  {
+    "id": "0ABcdeFG12345UK9PVA",
+    "name": "团队盘",
+    "user": "",
+    "pass": ""
+  },
+  {
+    "id": "1-HIJklmn6789o_pqrsT-uvwxyz",
+    "name": "一个子目录",
+    "user": "admin",
+    "pass": "password123"
+  }
+]
+```
 
-## Options
+> **提示**：
+>
+> * `id` 为 `root` 表示个人 Google Drive 的根目录。
+> * 团队盘和子目录需要填写其对应的 ID。
+> * `user` 和 `pass` 用于为单个云盘设置 Basic Auth 身份验证，如果不需要，请留空。
 
-### Video
+### 步骤 4: 部署代码
 
-| Option       | Type                       | Default                                                      | Description                                                  |
-| ------------ | -------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| `api`        | String                     | `''`                                                         | External video player api. When this value is not null, all of the following options do not work |
-| `autoplay`   | Boolean                    | `true`                                                       | When set to true, the video plays automatically, depending on whether the browser supports the |
-| `invertTime` | Boolean                    | `false`                                                      | Display the current time as a countdown rather than an incremental counter. |
-| `controls`   | Array, Function or Element | `['play-large', 'restart', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'download', 'fullscreen']` | Which buttons are displayed in the control bar. See more [CONTROLS.md](https://github.com/sampotts/plyr/blob/master/CONTROLS.md#using-default-controls) |
-| `settings`   | Array                      | `['quality', 'speed', 'loop']`                               | You can specify which settings to show in the menu           |
+1.  回到 Worker 的代码编辑器。
+2.  将本文档附带的最新版 `goindex_worker_admin_update` 脚本的**全部内容**复制并粘贴到编辑器中。
+3.  根据需要，你可以在代码顶部的 `authConfig` 对象中修改 `siteName`, `require_admin_password_for_clear` 等非敏感配置。
+4.  点击**保存并部署** (`Save and deploy`)。
 
-For more option, see plyr [options](https://github.com/sampotts/plyr#options)
+## 📖 使用说明
 
-### Audio
+### 浏览文件
 
-| Option      | Type    | Default    | Description                                                  |
-| ----------- | ------- | ---------- | ------------------------------------------------------------ |
-| `container` | String  | `.aplayer` | No support for changes                                       |
-| `fixed`     | Boolean | `true`     | No support for changes                                       |
-| `autoplay`  | Boolean | `false`    | audio autoplay                                               |
-| `loop`      | String  | `'all'`    | player loop play, values: 'all', 'one', 'none'               |
-| `order`     | String  | `'list'`   | player play order, values: 'list', 'random'                  |
-| `preload`   | String  | `'auto'`   | values: 'none', 'metadata', 'auto'                           |
-| `volume`    | Number  | `0.7`      | default volume, notice that player will remember user setting, default volume will not work after user set volume themselves |
-| `audios`    | Array   | `[]`       | Playlists can be preset. [FAQ](#FAQ)                         |
+* 部署成功后，访问你的 Worker 地址（例如 `https://your-name.workers.dev`），它会自动跳转到默认的第一个云盘。
+* URL 结构为 `/<盘符序号>:/<目录路径>`。例如，访问第二个云盘（索引为 1）的根目录，地址为 `https://your-name.workers.dev/1:/`。
 
-For more option, see APlayer [options](https://aplayer.js.org/#/home?id=options)
+### 管理后台
 
-## Change log
+* **访问**：直接在浏览器中访问 `https://your-name.workers.dev/admin` 即可进入缓存管理面板。
+* **清理缓存**：
+    1.  在面板上，你会看到所有已配置云盘的清理按钮，以及一个“清理所有云盘缓存”的按钮。
+    2.  如果 `require_admin_password_for_clear` 设置为 `true`，你需要先输入正确的管理员密码。
+    3.  点击相应的按钮即可清理该云盘或所有云盘在 KV 中的缓存数据。
+    4.  操作成功或失败后，页面会显示提示信息并自动刷新。
 
-### v2.0.8
+## ⚠️ 注意事项
 
-- Fix image file actions does not work
-- Fix misjudged file to image format
-- Fix more than 10 drive not working
-- Fix some of the operation functions in the search list cannot be used
-- Fix text cache content not refreshing
-- Add video default player([plyr](https://github.com/sampotts/plyr))
-- Add audio player ([APlayer](https://github.com/MoePlayer/APlayer)) 
-- Add copy button to video page
-- Add [NProgress](https://github.com/rstacruz/nprogress)
-- Add language cache cleanup
-- Add shortcut can't download tip
-- Markdown displays rendered html by default
-- CLI Delete prefetch preload of lazy load module
-- Delete fontawesome5
-
-### Fixed issues
-
-- Add clean file cache
-- Support for custom video player (API)
-- Beautify: the grid mode file shows icon when no preview is shown
-- Beautify: Adjust the HEAD.md render position
-- Solve the problem that files that can't be previewed can't be downloaded directly by clicking
-- Solve the problem that the file name cannot be opened
-- Solve the problem that switching pages will fall back in the current page loading
-
-- Program changed to SPA(single page application)
-- Add page level cache(Browser forward and backward do not refresh seconds to load, and Mac users have a better experience of using touch pad)
-- Add http basic auth(Each drive letter can be configured with a user name and password separately, which can protect all sub files and sub folders under the drive)
-- Add  grid view mode(File preview)
-- Add paging load
-- Add  i18n
-- Add html render 
-- Add render folder/file description
-- Add optional configuration
-- Support quick deployment
-- Support PDF Online preview
-- Replace text editor
-- Solve the problem of URL encoding
-- Solve other known problems
-
-- Support multi disk switching
-- Add version detection
-- Optimize search results
-- Optimize page display
-
-## Star History
-
-<a href="https://star-history.com/#Aicirou/goindex-theme-acrou&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Aicirou/goindex-theme-acrou&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Aicirou/goindex-theme-acrou&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Aicirou/goindex-theme-acrou&type=Date" />
- </picture>
-</a>
-
-## License
-
-[MIT](LICENSE)
-
+* 请务必将所有敏感变量（特别是 `CLIENT_ID`, `CLIENT_SECRET`, `REFRESH_TOKEN`）设置为**加密**变量 (`Secret`)，以防止泄露。
+* `DRIVE_ROOTS` 必须是严格的 JSON 格式，否则 Worker 将无法解析云盘列表。
+* 清理缓存操作会删除 KV 中的所有相关键，下次访问时系统会重新从 Google Drive API 获取数据并重建缓存。在数据量巨大时，这可能会短暂影响加载速度。
