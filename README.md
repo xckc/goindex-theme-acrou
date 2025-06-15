@@ -1,10 +1,12 @@
 # GoIndex-CF-Worker 优化版
 
-goindex-worker-secure.js 为无后台清理KV缓存功能的版本。
+基于 https://github.com/Aicirou/goindex-theme-acrou ，使用的主题文件还是原作的，只是使用gemini （谷歌AI）优化。
 
-cleanServerCache.js 基于 https://github.com/Aicirou/goindex-theme-acrou ，使用gemini进行优化。
+goindex-worker-secure.js 无后台清理KV缓存功能的版本。
 
-正常来讲清空缓存可以在设置里增加清理KV缓存按钮，但是需要去修改**主题**支持，我不懂前端vue，各种依赖关联，就让AI修改了/admin后台管理这个版本。
+cleanServerCache.js 有后台清理KV缓存功能的版本，多了require_admin_password_for_clear、ADMIN_PASS。
+
+正常来讲清空缓存可以在设置里增加清理KV缓存按钮，但是需要去修改**主题**支持，我不懂前端vue，各种依赖关联，就让AI修改了 /admin 后台管理这个版本。
 
 这是一个功能增强版的 GoIndex Cloudflare Worker 脚本。它不仅提供了 Google Drive 文件的基础索引功能，还集成了 `acrou` 主题、强大的 KV 缓存机制以及一个简单易用的后台管理面板，用于手动清理缓存。
 
