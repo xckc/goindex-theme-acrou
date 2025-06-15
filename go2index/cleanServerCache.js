@@ -8,7 +8,7 @@ var authConfig = {
     // client_id, client_secret, refresh_token are loaded from environment variables.
     // --- 新增：KV 缓存优化配置 ---
     enable_kv_cache: true, // 设置为 true 来启用 KV 缓存功能。
-    kv_cache_ttl: 604800,    // 缓存有效时间（秒），例如 3600 秒 = 1 小时。 TTL 必须是大于等于 60 的整数。
+    kv_cache_ttl: 259200,    // 缓存有效时间（秒），例如 3600 秒 = 1 小时。 TTL 必须是大于等于 60 的整数。
     // [新增] 管理功能配置
     require_admin_password_for_clear: true, // true: 清理缓存需要密码。false: 不需要密码。
     // [重要] 'roots' 配置现在建议从环境变量 'DRIVE_ROOTS' 加载，以提高安全性。
