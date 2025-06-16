@@ -103,10 +103,19 @@ Cloudflare Cron 触发器使用 **UTC (协调世界时)** 时间标准，而不�
         "id": "1Bxxxxxxxxxxxxxxxxx"
     }
 ]
+```
+
 name: 显示在前端的云盘名称。
+
 id:
+
 对于个人云盘根目录，使用 "root"。
+
 对于共享云盘，使用其 ID (可以在浏览器地址栏中找到)。
+
 对于子文件夹，使用其 ID。
+
 user, pass: (可选) 为该云盘设置 Basic Auth 密码保护。
+
 protect_file_link: (可选, true 或 false) 如果为 true，文件的直接下载链接也会受到 Basic Auth 的保护。
+
