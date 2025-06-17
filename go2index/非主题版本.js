@@ -543,7 +543,7 @@ async function renderHTML(driveId, filePath, urlParams, url) {
                     if (isFolder) {
                         link.classList.add('folder');
                         // The dataset.path is used by navigateTo(), which expects a root-relative path.
-                        // `finalFilePath` provides this correctly for both search and folder views.
+                        // finalFilePath provides this correctly for both search and folder views.
                         link.dataset.path = finalFilePath;
                     }
 
