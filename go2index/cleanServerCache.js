@@ -80,16 +80,16 @@ function html(current_drive_order = 0, model = {}) {
  <title>${authConfig.siteName}</title>
  <style>@import url(${themeOptions.cdn}@${themeOptions.version}/dist/style.min.css);</style>
  <script>
-   window.gdconfig = JSON.parse('${JSON.stringify({ version: authConfig.version, themeOptions: themeOptions, })}');
-   window.themeOptions = JSON.parse('${JSON.stringify(themeOptions)}');
-   window.gds = JSON.parse('${JSON.stringify(authConfig.roots.map((it) => it.name))}');
-   window.MODEL = JSON.parse('${JSON.stringify(model)}');
-   window.current_drive_order = ${current_drive_order};
+    window.gdconfig = JSON.parse('${JSON.stringify({ version: authConfig.version, themeOptions: themeOptions, })}');
+    window.themeOptions = JSON.parse('${JSON.stringify(themeOptions)}');
+    window.gds = JSON.parse('${JSON.stringify(authConfig.roots.map((it) => it.name))}');
+    window.MODEL = JSON.parse('${JSON.stringify(model)}');
+    window.current_drive_order = ${current_drive_order};
  </script>
  </head>
  <body>
-   <div id="app"></div>
-   <script src="${themeOptions.cdn}@${themeOptions.version}/dist/app.min.js"></script>
+    <div id="app"></div>
+    <script src="${themeOptions.cdn}@${themeOptions.version}/dist/app.min.js"></script>
  </body>
  </html>
  `;
@@ -103,6 +103,16 @@ addEventListener("fetch", (event) => {
  * 主请求处理函数
  */
 async function handleRequest(request) {
+    // [代码优化] 增加对 roots 配置的检查，防止因配置错误导致无限重定向
+    if (!authConfig.roots || authConfig.roots.length === 0) {
+        return new Response(
+            "Configuration Error: No drives are configured. Please check the 'DRIVE_ROOTS' environment variable in your Cloudflare Worker settings. It should be a valid JSON array.", {
+                status: 503, // Service Unavailable
+                headers: { "Content-Type": "text/plain; charset=utf-8" },
+            }
+        );
+    }
+
     let url = new URL(request.url);
     let path = decodeURI(url.pathname);
 
@@ -137,7 +147,11 @@ async function handleRequest(request) {
 
     // 检查盘符合法性
     if (isNaN(order) || order < 0 || order >= authConfig.roots.length) {
-        return redirectToIndexPage();
+        // [代码优化] 对无效的盘符索引返回明确的错误信息，而不是重定向
+        return new Response(`Error: Invalid drive index '${order}'. Please use an index from 0 to ${authConfig.roots.length - 1}.`, {
+            status: 404,
+            headers: { "Content-Type": "text/plain; charset=utf-8" }
+        });
     }
     // =================================================
     //  懒加载优化: 按需初始化 googleDrive 实例
