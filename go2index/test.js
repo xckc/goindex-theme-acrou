@@ -808,8 +808,12 @@ class googleDrive {
     }
 
     /**
-     * 搜索
-     * 优化：优先使用由 Cron Job 预热的全量文件列表缓存进行搜索。
+     * [最终优化版] 搜索函数
+     * 逻辑：
+     * 1. 优先使用已存在的全量文件列表缓存 (`all_files:*`)。
+     * 2. 如果缓存不存在，则立即执行全盘扫描，生成并储存该缓存。
+     * 3. 使用缓存（无论是预热的还是刚生成的）进行搜索。
+     * 4. 不再使用 Google Drive API 进行实时搜索，以保证行为统一。
      */
     async search(origin_keyword, page_token = null, page_index = 0) {
         const empty_result = {
@@ -822,101 +826,38 @@ class googleDrive {
             return empty_result;
         }
 
-        // --- 1. 优先从预热的全量缓存中搜索 ---
-        const prewarmedCacheKey = `all_files:${this.order}:${this.root.id}`;
-        const all_files = await this._kv_get(prewarmedCacheKey);
+        const cacheKey = `all_files:${this.order}:${this.root.id}`;
+        let all_files = await this._kv_get(cacheKey);
 
-        if (all_files) {
+        // 如果缓存不存在，则触发即时扫描
+        if (!all_files) {
+            console.log(`[Search] Cache not found for drive ${this.order}. Triggering on-demand full scan...`);
+            all_files = await this.listAllFiles(this.root.id);
+            // 将扫描结果存入KV，以便后续使用
+            await this._kv_put(cacheKey, all_files);
+            console.log(`[Search] On-demand scan for drive ${this.order} completed. Cached ${all_files.length} items.`);
+        } else {
             console.log(`[Search] Using pre-warmed cache for drive ${this.order}.`);
-            const filtered_files = all_files.filter(file => file.name.toLowerCase().includes(origin_keyword.toLowerCase()));
-
-            // 为搜索结果预热路径缓存，提升前端体验
-            filtered_files.forEach(file => {
-                if (file.id && file.path) {
-                    const pathByIdCacheKey = `path_by_id:${this.order}:${file.id}`;
-                    this.id_path_cache[file.id] = file.path; // Update memory cache
-                    this._kv_put(pathByIdCacheKey, file.path); // Update KV cache
-                }
-            });
-
-            // 由于是全量缓存搜索，不支持分页
-            return { ...empty_result, data: { files: filtered_files } };
         }
+        
+        // 使用缓存进行搜索
+        const filtered_files = all_files.filter(file => 
+            file.name.toLowerCase().includes(origin_keyword.toLowerCase())
+        );
 
-        // --- 2. 如果预热缓存不存在，则回退到原始搜索逻辑 ---
-        console.log(`[Search] Pre-warmed cache not found for drive ${this.order}. Falling back to API search.`);
-        const types = CONSTS.gd_root_type;
-        const is_user_drive = this.root_type === types.user_drive;
-        const is_share_drive = this.root_type === types.share_drive;
-        const is_sub_folder = this.root_type === types.sub_folder;
-
-        // [原始逻辑] 对 sub_folder 类型即时生成并缓存全量列表
-        if (is_sub_folder) {
-            console.log('[Search] On-demand full list generation for sub-folder.');
-            const onDemandFiles = await this.listAllFiles(this.root.id);
-            await this._kv_put(prewarmedCacheKey, onDemandFiles); // 首次搜索时也存入缓存
-            const filtered_files = onDemandFiles.filter(file => file.name.toLowerCase().includes(origin_keyword.toLowerCase()));
-            filtered_files.forEach(file => {
-                if (file.id && file.path) {
-                    const pathByIdCacheKey = `path_by_id:${this.order}:${file.id}`;
-                    this.id_path_cache[file.id] = file.path;
-                    this._kv_put(pathByIdCacheKey, file.path);
-                }
-            });
-            return { ...empty_result, data: { files: filtered_files } };
-        }
-
-        // [原始逻辑] 对 User Drive 和 Shared Drive 进行 API 搜索
-        if (!is_user_drive && !is_share_drive) {
-            return empty_result;
-        }
-
-        console.log('[Search] Using Google Drive API search.');
-        const apiCacheKey = `search:${this.order}:${origin_keyword}:${page_token || ''}`;
-        let search_result = await this._kv_get(apiCacheKey);
-        if (search_result) {
-            return search_result;
-        }
-
-        const sanitized_keyword = origin_keyword.replace(/'/g, "\\'");
-        const name_search_str = `name contains '${sanitized_keyword}'`;
-        let params = {};
-        if (is_user_drive) params.corpora = "user";
-        if (is_share_drive) {
-            params.corpora = "drive";
-            params.driveId = this.root.id;
-            params.includeItemsFromAllDrives = true;
-            params.supportsAllDrives = true;
-        }
-        if (page_token) params.pageToken = page_token;
-
-        params.q = `trashed = false AND name !='.password' AND (${name_search_str})`;
-        params.fields = "nextPageToken, files(id, name, mimeType, size , modifiedTime, thumbnailLink, description, shortcutDetails)";
-        params.pageSize = this.authConfig.search_result_list_page_size;
-        let url = "https://www.googleapis.com/drive/v3/files";
-        url += "?" + this.enQuery(params);
-        let requestOption = await this.requestOption();
-        let response = await fetch(url, requestOption);
-        let res_obj = await response.json();
-
-        if (res_obj.files) {
-            res_obj.files = this._processShortcuts(res_obj.files);
-            // 主动解析并缓存所有搜索结果的路径
-            if (res_obj.files.length > 0) {
-                const pathResolutions = res_obj.files.map(file => this.findPathById(file.id));
-                await Promise.all(pathResolutions);
+        // 为搜索结果预热路径缓存，提升前端体验
+        filtered_files.forEach(file => {
+            if (file.id && file.path) {
+                const pathByIdCacheKey = `path_by_id:${this.order}:${file.id}`;
+                this.id_path_cache[file.id] = file.path; // Update memory cache
+                this._kv_put(pathByIdCacheKey, file.path); // Update KV cache
             }
-        }
+        });
 
-        search_result = {
-            nextPageToken: res_obj.nextPageToken || null,
-            curPageIndex: page_index,
-            data: res_obj,
-        };
-
-        await this._kv_put(apiCacheKey, search_result);
-        return search_result;
+        // 由于是全量缓存搜索，不支持分页
+        return { ...empty_result, data: { files: filtered_files } };
     }
+
 
     async listAllFiles(folderId, basePath = '/') {
         const allFiles = [];
