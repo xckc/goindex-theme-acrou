@@ -21,19 +21,24 @@ var authConfig = {
     enable_password_file_verify: false,
 };
 
-// --- 从环境变量安全加载 `roots` 配置 ---
+// --- [优化] 从环境变量安全加载 `roots` 配置并捕获解析错误 ---
+let rootsParsingError = null; // 用于存储 `roots` 配置的解析错误信息
+
 try {
-    // 检查 DRIVE_ROOTS 环境变量是否已设置
     if (typeof DRIVE_ROOTS !== 'undefined' && DRIVE_ROOTS) {
         authConfig.roots = JSON.parse(DRIVE_ROOTS);
     } else {
-        // 如果环境变量未设置，则发出警告，程序将不会加载任何驱动器。
-        console.warn("`DRIVE_ROOTS` environment variable is not set. The application will not have any drives to display.");
+        // 如果环境变量未设置，则记录错误信息
+        rootsParsingError = "配置错误：'DRIVE_ROOTS' 环境变量未设置。请在 Cloudflare Worker 的设置中添加此变量。";
+        console.warn(rootsParsingError);
     }
 } catch (e) {
-    console.error("Failed to parse `DRIVE_ROOTS` environment variable. Please ensure it is a valid JSON array.", e);
-    authConfig.roots = []; // 解析失败时使用空数组
+    // 如果 JSON 解析失败，则记录具体的错误信息
+    rootsParsingError = `配置错误：'DRIVE_ROOTS' 环境变量解析失败。请确保它是一个有效的、单行的 JSON 数组，不包含注释或结尾的逗号。\n\n错误详情: ${e.message}`;
+    console.error(rootsParsingError);
+    authConfig.roots = []; // 解析失败时，确保 roots 为空数组
 }
+
 
 var themeOptions = {
     cdn: "https://cdn.jsdelivr.net/gh/Aicirou/goindex-theme-acrou",
@@ -80,16 +85,16 @@ function html(current_drive_order = 0, model = {}) {
  <title>${authConfig.siteName}</title>
  <style>@import url(${themeOptions.cdn}@${themeOptions.version}/dist/style.min.css);</style>
  <script>
-   window.gdconfig = JSON.parse('${JSON.stringify({ version: authConfig.version, themeOptions: themeOptions, })}');
-   window.themeOptions = JSON.parse('${JSON.stringify(themeOptions)}');
-   window.gds = JSON.parse('${JSON.stringify(authConfig.roots.map((it) => it.name))}');
-   window.MODEL = JSON.parse('${JSON.stringify(model)}');
-   window.current_drive_order = ${current_drive_order};
+    window.gdconfig = JSON.parse('${JSON.stringify({ version: authConfig.version, themeOptions: themeOptions, })}');
+    window.themeOptions = JSON.parse('${JSON.stringify(themeOptions)}');
+    window.gds = JSON.parse('${JSON.stringify(authConfig.roots.map((it) => it.name))}');
+    window.MODEL = JSON.parse('${JSON.stringify(model)}');
+    window.current_drive_order = ${current_drive_order};
  </script>
  </head>
  <body>
-   <div id="app"></div>
-   <script src="${themeOptions.cdn}@${themeOptions.version}/dist/app.min.js"></script>
+    <div id="app"></div>
+    <script src="${themeOptions.cdn}@${themeOptions.version}/dist/app.min.js"></script>
  </body>
  </html>
  `;
@@ -100,22 +105,21 @@ addEventListener("fetch", (event) => {
     event.respondWith(handleRequest(event.request));
 });
 
-// =======新增：Cron 计划任务处理=======
 // 监听计划任务事件 (Cron Triggers)
 addEventListener("scheduled", event => {
   event.waitUntil(handleScheduled(event));
 });
 
 /**
- * 处理 Cron 触发器事件以预热缓存
+ * [新增] 处理 Cron 触发器事件以预热缓存
  * @param {ScheduledEvent} event
  */
 async function handleScheduled(event) {
     console.log(`[${new Date().toISOString()}] Cron job started: Pre-warming cache...`);
 
-    // 确保 roots 已加载
-    if (!authConfig.roots || authConfig.roots.length === 0) {
-        console.warn(`[${new Date().toISOString()}] Cron job skipped: DRIVE_ROOTS is not configured.`);
+    // 检查 roots 是否已正确加载
+    if (rootsParsingError || !authConfig.roots || authConfig.roots.length === 0) {
+        console.warn(`[${new Date().toISOString()}] Cron job skipped: DRIVE_ROOTS is not configured correctly. Error: ${rootsParsingError || 'roots array is empty.'}`);
         return;
     }
 
@@ -149,12 +153,29 @@ async function handleScheduled(event) {
 
     console.log(`[${new Date().toISOString()}] Cron job finished.`);
 }
-// ===================================
 
 /**
  * 主请求处理函数
  */
 async function handleRequest(request) {
+    // [优化] 增加对 roots 配置错误的检查，返回具体错误信息
+    if (rootsParsingError) {
+        return new Response(rootsParsingError, {
+            status: 503, // Service Unavailable
+            headers: { "Content-Type": "text/plain; charset=utf-8" },
+        });
+    }
+
+    // [优化] 检查 roots 是否为空数组
+    if (!authConfig.roots || authConfig.roots.length === 0) {
+        return new Response(
+            "配置错误: 'DRIVE_ROOTS' 环境变量已加载，但内容为空数组。请在其中添加至少一个云盘配置。", {
+                status: 503,
+                headers: { "Content-Type": "text/plain; charset=utf-8" },
+            }
+        );
+    }
+
     let url = new URL(request.url);
     let path = decodeURI(url.pathname);
 
@@ -187,10 +208,14 @@ async function handleRequest(request) {
         return redirectToIndexPage();
     }
 
-    // 检查盘符合法性
+    // [优化] 检查盘符合法性，对无效索引返回明确错误
     if (isNaN(order) || order < 0 || order >= authConfig.roots.length) {
-        return redirectToIndexPage();
+        return new Response(`请求错误：无效的盘符索引 '${order}'。有效的索引范围是 0 到 ${authConfig.roots.length - 1}。`, {
+            status: 404,
+            headers: { "Content-Type": "text/plain; charset=utf-8" }
+        });
     }
+    
     // =================================================
     //  懒加载优化: 按需初始化 googleDrive 实例
     // =================================================
@@ -199,18 +224,25 @@ async function handleRequest(request) {
             const newGd = new googleDrive(authConfig, order);
             await newGd.init(); // 初始化 token
             await newGd.initRootType(); // 初始化 root 类型
-            if (newGd.root_type === -1) { // 检查初始化是否成功
-                return new Response(`Root '${authConfig.roots[order].name}' (index: ${order}) is misconfigured or failed to initialize.`, { status: 500 });
+            // [优化] 检查初始化是否成功，返回具体错误
+            if (newGd.root_type === -1) { 
+                return new Response(`云盘初始化失败：名为 '${authConfig.roots[order].name}' (索引: ${order}) 的云盘配置错误或无法初始化。请检查其 ID 是否正确。`, { 
+                    status: 500,
+                    headers: { "Content-Type": "text/plain; charset=utf-8" },
+                });
             }
             gds[order] = newGd;
         } catch (e) {
-            return new Response(`Failed to initialize drive ${order}: ${e.message}`, { status: 500 });
+            return new Response(`云盘初始化失败 (索引: ${order})：${e.message}`, { 
+                status: 500,
+                headers: { "Content-Type": "text/plain; charset=utf-8" },
+            });
         }
     }
 
     gd = gds[order];
     if (!gd) {
-        return new Response(`Drive ${order} is not available.`, { status: 500 });
+        return new Response(`错误：无法加载索引为 ${order} 的云盘实例。`, { status: 500 });
     }
 
     // 后续逻辑保持不变
@@ -356,46 +388,46 @@ function getAdminDashboardPage(message = null, isError = false) {
         '';
 
     return `
-   <!DOCTYPE html>
-   <html lang="zh-CN">
-   <head>
-       <meta charset="UTF-8">
-       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-       <title>缓存管理</title>
-       <style>
-           body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 1rem; background-color: #f0f2f5; color: #333; box-sizing: border-box;}
-           .container { background: #fff; padding: 2rem 2.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 600px; }
-           h1 { text-align: center; color: #1a1a1a; margin-bottom: 1rem; }
-           p { text-align: center; color: #666; margin-bottom: 2rem; }
-           form { width: 100%; }
-           label { font-weight: 600; margin-bottom: 0.5rem; display: block; }
-           input[type="password"] { width: 100%; box-sizing: border-box; padding: 0.75rem; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; margin-bottom: 1.5rem; }
-           .button-group { display: flex; flex-direction: column; gap: 0.75rem; }
-           button { padding: 0.8rem 1rem; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; transition: background-color 0.2s; text-align: left; width: 100%; box-sizing: border-box; }
-           .btn-drive { background-color: #e7f3ff; color: #007bff; border: 1px solid #007bff; }
-           .btn-drive:hover { background-color: #d0e7ff; }
-           .btn-all { background-color: #fdeaea; color: #d93025; border: 1px solid #d93025; margin-top: 1.5rem; text-align: center; font-weight: bold; }
-           .btn-all:hover { background-color: #fbd7d4; }
-           .message { padding: 1rem; margin-bottom: 1.5rem; border-radius: 4px; text-align: center; word-break: break-word; }
-           .message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-           .message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-       </style>
-   </head>
-   <body>
-       <div class="container">
-           <h1>缓存管理仪表板</h1>
-           ${messageHtml}
-           <p>选择一个操作来清理相应的缓存。</p>
-           <form method="post" action="">
-               ${passwordFieldHtml}
-               <div class="button-group">
-                   ${driveButtons}
-               </div>
-               <button type="submit" name="driveIndex" value="all" class="btn-all">清理所有云盘的缓存</button>
-           </form>
-       </div>
-   </body>
-   </html>`;
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>缓存管理</title>
+        <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 1rem; background-color: #f0f2f5; color: #333; box-sizing: border-box;}
+            .container { background: #fff; padding: 2rem 2.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 600px; }
+            h1 { text-align: center; color: #1a1a1a; margin-bottom: 1rem; }
+            p { text-align: center; color: #666; margin-bottom: 2rem; }
+            form { width: 100%; }
+            label { font-weight: 600; margin-bottom: 0.5rem; display: block; }
+            input[type="password"] { width: 100%; box-sizing: border-box; padding: 0.75rem; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; margin-bottom: 1.5rem; }
+            .button-group { display: flex; flex-direction: column; gap: 0.75rem; }
+            button { padding: 0.8rem 1rem; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; transition: background-color 0.2s; text-align: left; width: 100%; box-sizing: border-box; }
+            .btn-drive { background-color: #e7f3ff; color: #007bff; border: 1px solid #007bff; }
+            .btn-drive:hover { background-color: #d0e7ff; }
+            .btn-all { background-color: #fdeaea; color: #d93025; border: 1px solid #d93025; margin-top: 1.5rem; text-align: center; font-weight: bold; }
+            .btn-all:hover { background-color: #fbd7d4; }
+            .message { padding: 1rem; margin-bottom: 1.5rem; border-radius: 4px; text-align: center; word-break: break-word; }
+            .message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+            .message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>缓存管理仪表板</h1>
+            ${messageHtml}
+            <p>选择一个操作来清理相应的缓存。</p>
+            <form method="post" action="">
+                ${passwordFieldHtml}
+                <div class="button-group">
+                    ${driveButtons}
+                </div>
+                <button type="submit" name="driveIndex" value="all" class="btn-all">清理所有云盘的缓存</button>
+            </form>
+        </div>
+    </body>
+    </html>`;
 }
 
 /**
@@ -544,7 +576,7 @@ class googleDrive {
      */
     async init() {
         if (!this.authConfig.client_id || !this.authConfig.client_secret || !this.authConfig.refresh_token) {
-            throw new Error(`Credentials are not configured in environment variables (CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)`);
+            throw new Error(`凭证未在环境变量 (CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN) 中配置`);
         }
         await this.accessToken();
         if (authConfig.user_drive_real_root_id) return;
@@ -821,7 +853,6 @@ class googleDrive {
         // [原始逻辑] 对 sub_folder 类型即时生成并缓存全量列表
         if (is_sub_folder) {
             console.log('[Search] On-demand full list generation for sub-folder.');
-            // 这个逻辑现在与预热缓存的逻辑重复，但作为回退机制保留
             const onDemandFiles = await this.listAllFiles(this.root.id);
             await this._kv_put(prewarmedCacheKey, onDemandFiles); // 首次搜索时也存入缓存
             const filtered_files = onDemandFiles.filter(file => file.name.toLowerCase().includes(origin_keyword.toLowerCase()));
@@ -886,7 +917,6 @@ class googleDrive {
         await this._kv_put(apiCacheKey, search_result);
         return search_result;
     }
-
 
     async listAllFiles(folderId, basePath = '/') {
         const allFiles = [];
