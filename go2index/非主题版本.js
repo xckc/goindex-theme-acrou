@@ -22,7 +22,7 @@ const authConfig = {
 
     // --- KV Caching Configuration ---
     enable_kv_cache: true, // Set to true to enable KV caching. Requires a KV namespace binding.
-    kv_cache_ttl: 3600,    // Cache Time-To-Live in seconds. Minimum 60. (e.g., 3600 = 1 hour)
+    kv_cache_ttl: 259200,    // Cache Time-To-Live in seconds. Minimum 60. (e.g., 3600 = 1 hour)
     
     // --- Admin Functionality Configuration ---
     require_admin_password_for_clear: true, // true: require password for cache clearing. false: no password needed.
