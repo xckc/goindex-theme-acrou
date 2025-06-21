@@ -1,17 +1,15 @@
 // ======= START OF CONFIGURATION =======
 /**
- * @version 2.2.5
+ * @version 2.3.0
  * @description
- * - Added a button to manually refresh the cache for the current page.
- * - Fixed cron job error where DRIVE_ROOTS was not loaded.
- * - Introduced separate cache TTLs for browsing and cron/search indexing.
- * - Search function now creates a long-lived cache on first run if it doesn't exist.
- * - Fixed multiple client-side syntax errors in the HTML template.
- * - This version contains the complete, unabridged code.
+ * - Implemented sequential cron job caching, one drive per run.
+ * - Added time-based cache refresh logic: cron jobs only update caches if they are from a previous day or before a set hour on the current day.
+ * - Stored cache generation timestamp with the cache object.
+ * - Adjusted default cache TTLs.
  */
 const authConfig = {
     siteName: "GDrive Index", // 您的网站名称
-    version: "2.2.5", // 自定义版本
+    version: "2.3.0", // 自定义版本
     
     // [重要] 凭证 (client_id, client_secret, refresh_token) 和云盘配置 (roots)
     // 现在完全通过 Cloudflare 的环境变量加载，以增强安全性。
@@ -24,9 +22,10 @@ const authConfig = {
     // 6. GD_INDEX_CACHE: (必须) 绑定一个 KV 命名空间。
 
     // --- KV 缓存配置 ---
-    enable_kv_cache: true,          // 设置为 true 以启用 KV 缓存。
-    browsing_cache_ttl: 43200,        // [新增] 浏览缓存 TTL (秒)。用于文件夹列表、文件信息等日常浏览操作。建议设置较短时间，例如 600 (10分钟)。
-    cron_cache_ttl: 172800,         // [新增] Cron 任务缓存 TTL (秒)。专用于由定时任务或首次搜索生成的全量文件列表，供搜索功能使用。建议设置较长时间，例如 172800 (2天)。
+    enable_kv_cache: true,           // 设置为 true 以启用 KV 缓存。
+    browsing_cache_ttl: 43200,       // [修改] 浏览缓存 TTL (秒)。用于文件夹列表、文件信息等。默认为 12 小时。
+    cron_cache_ttl: 86400,           // [修改] Cron 任务缓存 TTL (秒)。专用于全量文件列表。默认为 24 小时。
+    cron_update_hour: 4,             // [新增] Cron 任务仅在此小时后执行 (UTC+8)，除非缓存不存在。
     
     // --- 管理功能配置 ---
     require_admin_password_for_clear: true,
@@ -55,6 +54,8 @@ const CONSTS = {
     },
     folder_mime_type: "application/vnd.google-apps.folder",
     shortcut_mime_type: "application/vnd.google-apps.shortcut",
+    // [新增] KV 键名，用于存储下一个要执行 cron 任务的云盘索引
+    CRON_NEXT_DRIVE_INDEX_KEY: "cron_next_drive_index", 
 };
 
 // 全局 GoogleDrive 实例缓存 (懒加载)
@@ -210,7 +211,6 @@ async function handleApiRouter(request) {
         return jsonResponse({ path: filePath });
     }
 
-    // [新增] 用于手动刷新当前页面缓存的 API
     if (path === '/api/refresh') {
         const pathToRefresh = url.searchParams.get('path');
         if (typeof pathToRefresh !== 'string') {
@@ -225,46 +225,84 @@ async function handleApiRouter(request) {
 
 
 /**
- * 处理 Cron 触发器以预热缓存
+ * [重构] 处理 Cron 触发器，实现顺序、智能的缓存更新
  * @param {ScheduledEvent} event
  */
 async function handleScheduled(event) {
-    // [修改] 在执行任务前，确保配置已初始化
     initializeRoots();
     
-    console.log(`[${new Date().toISOString()}] Cron 任务开始: 预热缓存...`);
-
     if (rootsParsingError || !authConfig.roots || authConfig.roots.length === 0) {
-        console.warn(`[${new Date().toISOString()}] Cron 任务跳过: DRIVE_ROOTS 配置问题. 错误: ${rootsParsingError || 'roots 数组为空.'}`);
+        console.error(`Cron 任务跳过: DRIVE_ROOTS 配置问题. 错误: ${rootsParsingError || 'roots 数组为空.'}`);
+        return;
+    }
+    
+    if (typeof GD_INDEX_CACHE === 'undefined') {
+        console.error("Cron 任务跳过: 未绑定 KV 命名空间 'GD_INDEX_CACHE'。");
         return;
     }
 
-    for (let i = 0; i < authConfig.roots.length; i++) {
-        const rootConfig = authConfig.roots[i];
-        console.log(`[${new Date().toISOString()}] 处理云盘 ${i} (${rootConfig.name})...`);
+    // 获取下一个要处理的云盘索引
+    const currentIndexStr = await GD_INDEX_CACHE.get(CONSTS.CRON_NEXT_DRIVE_INDEX_KEY);
+    const currentIndex = currentIndexStr ? parseInt(currentIndexStr, 10) : 0;
+    
+    if (currentIndex >= authConfig.roots.length) {
+        // 如果索引越界，重置为 0
+        await GD_INDEX_CACHE.put(CONSTS.CRON_NEXT_DRIVE_INDEX_KEY, "0");
+        console.log("Cron 任务: 所有云盘都已检查，索引重置。");
+        return;
+    }
+    
+    const driveId = currentIndex;
+    const rootConfig = authConfig.roots[driveId];
+    console.log(`Cron 任务开始: 正在检查云盘 ${driveId} (${rootConfig.name})...`);
 
-        try {
-            const gd = await getGoogleDrive(i, true); // 强制重新初始化
-            if (!gd || gd.root_type === -1) {
-                console.error(`[${new Date().toISOString()}] 初始化云盘 ${i} (${rootConfig.name}) 失败。跳过。`);
-                continue;
-            }
+    // 时间逻辑 (UTC+8)
+    const now = new Date(new Date().getTime() + 8 * 3600 * 1000);
+    const todayUpdateHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), authConfig.cron_update_hour).getTime();
 
-            console.log(`[${new Date().toISOString()}] 开始为云盘 ${i} (${rootConfig.name}) 列出所有文件...`);
-            const all_files = await gd.listAllFiles(gd.root.id);
-            const cacheKey = `all_files:${i}:${gd.root.id}`;
-            // _kv_put 会自动使用 cron_cache_ttl
-            await gd._kv_put(cacheKey, all_files);
+    // 检查现有缓存
+    const gd = await getGoogleDrive(driveId, true); // 强制重新初始化以获取最新配置
+    if (!gd || gd.root_type === -1) {
+        console.error(`初始化云盘 ${driveId} (${rootConfig.name}) 失败。跳过。`);
+        // 更新到下一个索引以便下次运行
+        await GD_INDEX_CACHE.put(CONSTS.CRON_NEXT_DRIVE_INDEX_KEY, (currentIndex + 1).toString());
+        return;
+    }
+    const cacheKey = `all_files:${driveId}:${gd.root.id}`;
+    const cacheObject = await gd._kv_get(cacheKey);
 
-            console.log(`[${new Date().toISOString()}] 成功为云盘 ${i} (${rootConfig.name}) 缓存了 ${all_files.length} 个文件。`);
-
-        } catch (e) {
-            console.error(`[${new Date().toISOString()}] 处理云盘 ${i} (${rootConfig.name}) 时出错:`, e.message, e.stack);
-        }
+    let needsUpdate = false;
+    if (!cacheObject || !cacheObject.timestamp) {
+        needsUpdate = true;
+        console.log(`云盘 ${driveId}: 未找到缓存，需要生成。`);
+    } else if (cacheObject.timestamp < todayUpdateHour) {
+        needsUpdate = true;
+        console.log(`云盘 ${driveId}: 缓存已过期 (生成于 ${new Date(cacheObject.timestamp).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'})})，需要更新。`);
+    } else {
+        console.log(`云盘 ${driveId}: 今日缓存已是最新，跳过。`);
     }
 
-    console.log(`[${new Date().toISOString()}] Cron 任务完成。`);
+    if (needsUpdate) {
+        try {
+            console.log(`正在为云盘 ${driveId} (${rootConfig.name}) 生成全量文件列表...`);
+            const all_files = await gd.listAllFiles(gd.root.id);
+            const newCacheObject = {
+                files: all_files,
+                timestamp: Date.now() // 使用 UTC 时间戳存储
+            };
+            await gd._kv_put(cacheKey, newCacheObject);
+            console.log(`成功为云盘 ${driveId} (${rootConfig.name}) 缓存了 ${all_files.length} 个文件。`);
+        } catch(e) {
+            console.error(`为云盘 ${driveId} (${rootConfig.name}) 生成缓存时出错:`, e.message, e.stack);
+        }
+    }
+    
+    // 无论本次是否更新，都将索引指向下一个云盘
+    const nextIndex = (currentIndex + 1) % authConfig.roots.length;
+    await GD_INDEX_CACHE.put(CONSTS.CRON_NEXT_DRIVE_INDEX_KEY, nextIndex.toString());
+    console.log(`Cron 任务完成。下次将检查云盘索引: ${nextIndex}`);
 }
+
 
 /**
  * 解析 URL 路径为 driveId 和 filePath
@@ -1013,18 +1051,21 @@ class googleDrive {
         if (!query) return { data: { files: [] } };
         
         const cacheKey = `all_files:${this.order}:${this.root.id}`;
-        let all_files = await this._kv_get(cacheKey);
+        let cacheObject = await this._kv_get(cacheKey);
 
-        if (!all_files) {
+        if (!cacheObject || !cacheObject.files) {
             console.log(`[Search] 缓存未命中，为云盘 ${this.order} 按需执行扫描...`);
-            all_files = await this.listAllFiles(this.root.id);
-            // 此处写入的缓存将自动使用 cron_cache_ttl
-            await this._kv_put(cacheKey, all_files);
+            const all_files = await this.listAllFiles(this.root.id);
+            cacheObject = {
+                files: all_files,
+                timestamp: Date.now()
+            };
+            await this._kv_put(cacheKey, cacheObject);
             console.log(`[Search] 已为云盘 ${this.order} 生成并缓存了 ${all_files.length} 个项目。`);
         }
         
         const lowerCaseQuery = query.toLowerCase();
-        const filtered_files = all_files.filter(file => 
+        const filtered_files = cacheObject.files.filter(file => 
             file.name.toLowerCase().includes(lowerCaseQuery)
         );
         
@@ -1266,11 +1307,11 @@ class googleDrive {
         }
         
         const prefixesToDelete = [];
-        // For directories, clear the list cache, which can have multiple pages.
+        // 对于目录，清除其列表缓存（可能包含多个分页）
         if (path.endsWith('/')) {
             prefixesToDelete.push(`list:${this.order}:${path}`);
         }
-        // For files, clear the file object cache.
+        // 对于文件，清除其文件对象缓存
         else {
             prefixesToDelete.push(`file:${this.order}:${path}`);
         }
@@ -1414,8 +1455,9 @@ async function clearKVCache(driveIndex) {
         const prefixesToDelete = [];
 
         if (driveIndex === 'all') {
-            // 为“所有云盘”情况准备空前缀以匹配所有键
+            // 清理所有缓存，包括 cron 状态
             prefixesToDelete.push('');
+            await GD_INDEX_CACHE.delete(CONSTS.CRON_NEXT_DRIVE_INDEX_KEY);
         } else {
             const index = parseInt(driveIndex, 10);
             if (isNaN(index) || index < 0 || index >= authConfig.roots.length) {
