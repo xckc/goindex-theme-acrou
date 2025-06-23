@@ -1,16 +1,16 @@
 // ======= START OF CONFIGURATION =======
 /**
- * @version 2.3.2
+ * @version 2.3.3
  * @description
+ * - Merged the more robust and efficient cron job logic from test.js.
+ * - Cron job now checks if a drive's cache has already been updated today to prevent redundant scans.
+ * - Cron job will retry the same drive on the next run if the initial attempt was too early, instead of skipping it.
  * - The admin panel is now accessible via both `/admin` and `/admin/`.
- * - Fixed a critical caching bug in `findPathId` that caused folders with the same name in different directories to resolve to the same ID.
- * - The in-memory path cache now uses full, absolute paths as keys, preventing collisions.
- * - Implemented sequential cron job caching, one drive per run.
- * - Added time-based cache refresh logic for cron jobs.
+ * - Fixed a critical caching bug in `findPathId`.
  */
 const authConfig = {
     siteName: "GDrive Index", // 您的网站名称
-    version: "2.3.2", // 自定义版本
+    version: "2.3.3", // 自定义版本
     
     // [重要] 凭证 (client_id, client_secret, refresh_token) 和云盘配置 (roots)
     // 现在完全通过 Cloudflare 的环境变量加载，以增强安全性。
@@ -221,78 +221,105 @@ async function handleApiRouter(request) {
 
 
 /**
- * 处理 Cron 触发器，实现顺序、智能的缓存更新
+ * [UPDATED] 处理 Cron 触发器, 使用更高效的缓存更新逻辑.
  * @param {ScheduledEvent} event
  */
 async function handleScheduled(event) {
     initializeRoots();
-    
-    if (rootsParsingError || !authConfig.roots || authConfig.roots.length === 0) {
-        console.error(`Cron 任务跳过: DRIVE_ROOTS 配置问题. 错误: ${rootsParsingError || 'roots 数组为空.'}`);
+
+    const now = new Date();
+    console.log(`[${now.toISOString()}] Cron job starting.`);
+
+    if (typeof GD_INDEX_CACHE === 'undefined') {
+        console.error(`[${now.toISOString()}] Cron job failed: KV namespace 'GD_INDEX_CACHE' is not bound.`);
         return;
     }
-    
-    if (typeof GD_INDEX_CACHE === 'undefined') {
-        console.error("Cron 任务跳过: 未绑定 KV 命名空间 'GD_INDEX_CACHE'。");
+    if (rootsParsingError || !authConfig.roots || !authConfig.roots.length) {
+        console.warn(`[${now.toISOString()}] Cron job skipped: DRIVE_ROOTS not configured correctly. Error: ${rootsParsingError || 'roots array is empty.'}`);
         return;
     }
 
-    const currentIndexStr = await GD_INDEX_CACHE.get(CONSTS.CRON_NEXT_DRIVE_INDEX_KEY);
-    const currentIndex = currentIndexStr ? parseInt(currentIndexStr, 10) : 0;
+    const utc8Offset = 8 * 3600 * 1000;
+    const now_utc8 = new Date(now.getTime() + utc8Offset);
+    const currentHour_utc8 = now_utc8.getUTCHours();
+    const today_utc8_string = now_utc8.toISOString().split('T')[0];
     
-    if (currentIndex >= authConfig.roots.length) {
-        await GD_INDEX_CACHE.put(CONSTS.CRON_NEXT_DRIVE_INDEX_KEY, "0");
-        console.log("Cron 任务: 所有云盘都已检查，索引重置。");
-        return;
+    const driveIndexKey = CONSTS.CRON_NEXT_DRIVE_INDEX_KEY;
+    const currentIndexStr = await GD_INDEX_CACHE.get(driveIndexKey);
+    let currentIndex = currentIndexStr ? parseInt(currentIndexStr, 10) : 0;
+    
+    if (isNaN(currentIndex) || currentIndex >= authConfig.roots.length) {
+        currentIndex = 0;
     }
-    
+
     const driveId = currentIndex;
     const rootConfig = authConfig.roots[driveId];
-    console.log(`Cron 任务开始: 正在检查云盘 ${driveId} (${rootConfig.name})...`);
-
-    const now = new Date(new Date().getTime() + 8 * 3600 * 1000);
-    const todayUpdateHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), authConfig.cron_update_hour).getTime();
-
-    const gd = await getGoogleDrive(driveId, true); 
-    if (!gd || gd.root_type === -1) {
-        console.error(`初始化云盘 ${driveId} (${rootConfig.name}) 失败。跳过。`);
-        await GD_INDEX_CACHE.put(CONSTS.CRON_NEXT_DRIVE_INDEX_KEY, (currentIndex + 1).toString());
+    
+    const gd = await getGoogleDrive(driveId, true); // Force reload to get fresh config
+    if (!gd) {
+        console.error(`[${now.toISOString()}] Failed to initialize drive ${driveId} (${rootConfig.name}). Skipping.`);
+        // Advance index to avoid getting stuck
+        const nextIndex = (driveId + 1) % authConfig.roots.length;
+        await GD_INDEX_CACHE.put(driveIndexKey, nextIndex.toString());
         return;
     }
+
+    await gd.initRootType();
+    if (gd.root_type === -1) {
+        console.error(`[${now.toISOString()}] Failed to determine root type for drive ${driveId} (${rootConfig.name}). Skipping.`);
+        const nextIndex = (driveId + 1) % authConfig.roots.length;
+        await GD_INDEX_CACHE.put(driveIndexKey, nextIndex.toString());
+        return;
+    }
+    
     const cacheKey = `all_files:${driveId}:${gd.root.id}`;
     const cacheObject = await gd._kv_get(cacheKey);
 
-    let needsUpdate = false;
-    if (!cacheObject || !cacheObject.timestamp) {
-        needsUpdate = true;
-        console.log(`云盘 ${driveId}: 未找到缓存，需要生成。`);
-    } else if (cacheObject.timestamp < todayUpdateHour) {
-        needsUpdate = true;
-        console.log(`云盘 ${driveId}: 缓存已过期 (生成于 ${new Date(cacheObject.timestamp).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'})})，需要更新。`);
-    } else {
-        console.log(`云盘 ${driveId}: 今日缓存已是最新，跳过。`);
-    }
+    // Check 1: Has it been updated today?
+    if (cacheObject && cacheObject.last_updated) {
+        const lastUpdated_utc8 = new Date(new Date(cacheObject.last_updated).getTime() + utc8Offset);
+        const lastUpdated_utc8_string = lastUpdated_utc8.toISOString().split('T')[0];
 
-    if (needsUpdate) {
-        try {
-            console.log(`正在为云盘 ${driveId} (${rootConfig.name}) 生成全量文件列表...`);
-            const all_files = await gd.listAllFiles(gd.root.id);
-            const newCacheObject = {
-                files: all_files,
-                timestamp: Date.now() 
-            };
-            await gd._kv_put(cacheKey, newCacheObject);
-            console.log(`成功为云盘 ${driveId} (${rootConfig.name}) 缓存了 ${all_files.length} 个文件。`);
-        } catch(e) {
-            console.error(`为云盘 ${driveId} (${rootConfig.name}) 生成缓存时出错:`, e.message, e.stack);
+        if (lastUpdated_utc8_string === today_utc8_string) {
+            console.log(`[${now.toISOString()}] Drive ${driveId} (${rootConfig.name}) already updated today. Skipping.`);
+            // Skip but advance the index to the next drive
+            const nextIndex = (driveId + 1) % authConfig.roots.length;
+            await GD_INDEX_CACHE.put(driveIndexKey, nextIndex.toString());
+            console.log(`[${now.toISOString()}] Cron job finished for drive ${driveId}. Next to process is index: ${nextIndex}.`);
+            return;
         }
     }
-    
-    const nextIndex = (currentIndex + 1) % authConfig.roots.length;
-    await GD_INDEX_CACHE.put(CONSTS.CRON_NEXT_DRIVE_INDEX_KEY, nextIndex.toString());
-    console.log(`Cron 任务完成。下次将检查云盘索引: ${nextIndex}`);
-}
 
+    // Check 2: Is it too early? (Only checked if cache already exists)
+    if (cacheObject && currentHour_utc8 < authConfig.cron_update_hour) {
+        console.log(`[${now.toISOString()}] It's before ${authConfig.cron_update_hour}:00 (UTC+8). Scheduled update for drive ${driveId} (${rootConfig.name}) postponed.`);
+        // Do NOT advance the index; try this drive again on the next run.
+        return;
+    }
+
+    // Perform the update
+    console.log(`[${now.toISOString()}] Checks passed for drive ${driveId} (${rootConfig.name}). Starting cache update.`);
+    try {
+        console.log(`[${now.toISOString()}] Listing all files for drive ${driveId} (${rootConfig.name})...`);
+        const all_files = await gd.listAllFiles(gd.root.id);
+
+        const newCacheObject = {
+            files: all_files,
+            last_updated: new Date().toISOString() // Store timestamp as ISO string
+        };
+
+        await gd._kv_put(cacheKey, newCacheObject);
+        console.log(`[${now.toISOString()}] Successfully cached ${all_files.length} files for drive ${driveId} (${rootConfig.name}).`);
+
+    } catch (e) {
+        console.error(`[${now.toISOString()}] Unhandled error processing drive ${driveId} (${rootConfig.name}):`, e.message, e.stack);
+    }
+
+    // Advance the index for the next run
+    const nextIndex = (driveId + 1) % authConfig.roots.length;
+    await GD_INDEX_CACHE.put(driveIndexKey, nextIndex.toString());
+    console.log(`[${now.toISOString()}] Cron job finished for drive ${driveId}. Next to process is index: ${nextIndex}.`);
+}
 
 /**
  * 解析 URL 路径为 driveId 和 filePath
@@ -1024,7 +1051,7 @@ class googleDrive {
             const all_files = await this.listAllFiles(this.root.id);
             cacheObject = {
                 files: all_files,
-                timestamp: Date.now()
+                last_updated: new Date().toISOString()
             };
             await this._kv_put(cacheKey, cacheObject);
             console.log(`[Search] 已为云盘 ${this.order} 生成并缓存了 ${all_files.length} 个项目。`);
