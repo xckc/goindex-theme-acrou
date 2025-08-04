@@ -1,6 +1,6 @@
 /**
  * Google Drive Index - Cloudflare Worker (Refactored)
- * @version 2.3.6-refactored
+ * @version 2.3.7-refactored
  * * A comprehensive Google Drive directory index built for Cloudflare Workers.
  * This is a refactored version with improved code structure and organization.
  * * Features:
@@ -11,6 +11,7 @@
  * - Advanced search functionality across all files (with intelligent hint)
  * - Admin panel for cache management (Layout Refactored)
  * - Enhanced file preview page with Plyr.io player
+ * - Optimized refresh logic to conserve KV 'list' operations
  * - Basic authentication support per drive
  * - Direct file download and media streaming
  */
@@ -21,7 +22,7 @@
 
 const authConfig = {
     siteName: "GDrive Index",
-    version: "2.3.6-refactored",
+    version: "2.3.7-refactored",
     
     // KV cache configuration
     enable_kv_cache: true,
@@ -613,6 +614,31 @@ class GoogleDrive {
             .join('&');
     }
 
+    // --- MODIFICATION: New "soft refresh" method ---
+    // This method refreshes the first page of a directory's cache without using 'list' operations.
+    async softRefreshPathCache(path) {
+        if (!this.kv_cache_available) {
+            return { success: true, message: "KV cache is not enabled." };
+        }
+        try {
+            // Re-fetch the first page directly from Google Drive
+            const id = await this.findPathId(path);
+            const list_result = await this._ls(id, null, 0);
+
+            if (list_result && list_result.data) {
+                // Overwrite the cache for the first page.
+                // This doesn't clean up old paginated entries, but avoids 'list' operations.
+                const cacheKey = `list:${this.order}:${path}:0:`;
+                await this._kv_put(cacheKey, list_result);
+            }
+            return { success: true };
+        } catch (e) {
+            console.error("KV Soft Refresh Error:", e);
+            return { success: false, message: `软刷新失败: ${e.message}` };
+        }
+    }
+
+    // This method is now only used by the admin panel's "Clear" button.
     async clearPathCache(path) {
         if (!this.kv_cache_available) {
             return { success: true, message: "KV cache is not enabled." };
@@ -2084,7 +2110,8 @@ async function handleApiRouter(request) {
             if (typeof pathToRefresh !== 'string') {
                 return jsonResponse({ error: "Missing 'path' parameter" }, 400);
             }
-            const result = await gd.clearPathCache(pathToRefresh);
+            // --- MODIFICATION: Use soft refresh to avoid 'list' operations ---
+            const result = await gd.softRefreshPathCache(pathToRefresh);
             return jsonResponse(result);
         
         default:
