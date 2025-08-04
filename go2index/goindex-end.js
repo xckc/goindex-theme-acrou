@@ -1,6 +1,6 @@
 /**
  * Google Drive Index - Cloudflare Worker (Refactored)
- * @version 2.3.5-refactored
+ * @version 2.3.6-refactored
  * * A comprehensive Google Drive directory index built for Cloudflare Workers.
  * This is a refactored version with improved code structure and organization.
  * * Features:
@@ -8,7 +8,7 @@
  * - Efficient KV caching system for optimal performance  
  * - Automated cron-based cache updates
  * - Modern responsive web interface with dark/light themes
- * - Advanced search functionality across all files
+ * - Advanced search functionality across all files (with intelligent hint)
  * - Admin panel for cache management (Layout Refactored)
  * - Enhanced file preview page with Plyr.io player
  * - Basic authentication support per drive
@@ -21,7 +21,7 @@
 
 const authConfig = {
     siteName: "GDrive Index",
-    version: "2.3.5-refactored",
+    version: "2.3.6-refactored",
     
     // KV cache configuration
     enable_kv_cache: true,
@@ -920,6 +920,7 @@ async function renderHTML(driveId, filePath, urlParams, url) {
                 }
             }
 
+            // --- MODIFIED: Intelligent Search Hint ---
             async function performSearch(query) {
                 if (appState.isLoading || !query) return;
                 appState.path = \`搜索结果: "\${query}"\`;
@@ -928,20 +929,30 @@ async function renderHTML(driveId, filePath, urlParams, url) {
 
                 breadcrumbs.innerHTML = \`<a href="/\${appState.driveId}:/">根目录</a><span class="separator"> / </span><span>\${appState.path}</span>\`;
                 
-                // 显示搜索提示
-                if (!loadingIndicator.querySelector('.search-hint')) {
-                    const hint = document.createElement('div');
-                    hint.className = 'search-hint';
-                    hint.style.cssText = 'margin-top: 1rem; font-size: 0.9rem; color: #6c757d;';
-                    hint.textContent = '首次搜索需要扫描整个云盘，请耐心等待...';
-                    loadingIndicator.appendChild(hint);
-                }
-                
+                // Use a timer to only show the "first search" hint for long-running searches.
+                let hintTimer = setTimeout(() => {
+                    const hintElement = document.createElement('div');
+                    hintElement.className = 'search-hint';
+                    hintElement.style.cssText = 'margin-top: 1rem; font-size: 0.9rem; color: #6c757d;';
+                    hintElement.textContent = '首次搜索可能需要扫描整个云盘，请耐心等待...';
+                    
+                    if (loadingIndicator.style.display === 'block') {
+                         loadingIndicator.appendChild(hintElement);
+                    }
+                }, 2000); // Show hint if search takes longer than 2 seconds
+
                 const result = await apiFetch('/api/search', { q: query });
+
+                // Clean up timer and hint after the search is complete
+                clearTimeout(hintTimer);
+                const existingHint = loadingIndicator.querySelector('.search-hint');
+                if (existingHint) {
+                    existingHint.remove();
+                }
+
                 if (result && result.data) {
                     renderFiles(result.data.files);
                     
-                    // 显示缓存信息
                     if (result.data.cache_info) {
                         const info = result.data.cache_info;
                         console.log(\`搜索完成: 总文件 \${info.total_files} 个，匹配 \${info.filtered_count} 个，缓存时间: \${info.cache_timestamp}\`);
