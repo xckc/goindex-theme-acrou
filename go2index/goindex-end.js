@@ -1,61 +1,73 @@
 /**
- * Google Drive Index - Cloudflare Worker (Refactored)
- * @version 2.3.7-refactored
- * * A comprehensive Google Drive directory index built for Cloudflare Workers.
- * This is a refactored version with improved code structure and organization.
- * * Features:
- * - Multi-drive support with secure environment variable configuration
- * - Efficient KV caching system for optimal performance  
- * - Automated cron-based cache updates
- * - Modern responsive web interface with dark/light themes
- * - Advanced search functionality across all files (with intelligent hint)
- * - Admin panel for cache management (Layout Refactored)
- * - Enhanced file preview page with Plyr.io player
- * - Optimized refresh logic to conserve KV 'list' operations
- * - Basic authentication support per drive
- * - Direct file download and media streaming
+ * Google Drive 目录索引 - Cloudflare Worker 重构版
+ * @version 1.0-final-zh
+ *
+ * 一个为 Cloudflare Workers 构建的、功能全面的 Google Drive 目录索引程序。
+ * 这是一个经过重构的版本，具有改进的代码结构和组织。
+ *
+ * 功能特性:
+ * - 通过安全的环境变量配置，支持多云盘挂载
+ * - 高效的 KV 缓存系统，实现最佳性能
+ * - 基于 Cron 的自动化缓存更新
+ * - 现代化的响应式 Web 界面，支持浅色/深色主题
+ * - 强大的跨文件搜索功能
+ * - 用于缓存管理的后台面板
+ * - 支持为每个云盘设置基础身份验证
+ * - 支持文件直接下载和流媒体播放
  */
 
 // ===============================================================
-// CONFIGURATION MODULE
+// 配置模块
 // ===============================================================
 
 const authConfig = {
+    // 网站名称
     siteName: "GDrive Index",
-    version: "2.3.7-refactored",
+    // 脚本版本
+    version: "1.0-final-zh",
     
-    // KV cache configuration
+    // KV 缓存配置
     enable_kv_cache: true,
-    browsing_cache_ttl: 43200,      // 12 hours
-    cron_cache_ttl: 86400,          // 24 hours
-    cron_update_hour: 4,            // UTC+8
+    // 浏览缓存的有效期（秒）。用户访问文件夹时生成。默认为12小时。
+    browsing_cache_ttl: 43200,
+    // Cron任务生成的搜索缓存有效期（秒）。默认为24小时。
+    cron_cache_ttl: 86400,
+    // Cron任务执行全盘扫描的最早时间（UTC+8时区）。默认为 4，即凌晨4点。
+    cron_update_hour: 4,
     
-    // Admin functionality
+    // 后台管理功能
     require_admin_password_for_clear: true,
 
-    // Pagination
-    files_list_page_size: 200,
-    search_result_list_page_size: 50,
+    // 分页设置
+    files_list_page_size: 200,      // 文件夹列表每页显示的项目数
+    search_result_list_page_size: 50, // 搜索结果每页显示的项目数
     
-    // Security & CORS
-    enable_cors_file_down: false,
-    default_gd: 0,
+    // 安全与CORS
+    enable_cors_file_down: false,   // 是否为文件下载启用CORS跨域支持
+    default_gd: 0,                  // 默认加载的云盘索引号（从0开始）
 };
 
 const CONSTS = {
+    // Google Drive API 请求中默认获取的文件字段
     default_file_fields: "parents,id,name,mimeType,modifiedTime,createdTime,fileExtension,size,shortcutDetails",
+    // Google Drive 根目录类型定义
     gd_root_type: {
-        user_drive: 0,
-        share_drive: 1,
-        sub_folder: 2,
+        user_drive: 0,  // 用户个人云盘
+        share_drive: 1, // 共享云盘（团队盘）
+        sub_folder: 2,  // 特定子文件夹
     },
+    // Google Drive 文件夹的 MIME 类型
     folder_mime_type: "application/vnd.google-apps.folder",
+    // Google Drive 快捷方式的 MIME 类型
     shortcut_mime_type: "application/vnd.google-apps.shortcut",
+    // 用于存储下一个 Cron 任务应处理的云盘索引的 KV 键名
     CRON_NEXT_DRIVE_INDEX_KEY: "cron_next_drive_index",
 };
 
+// 用于存储 DRIVE_ROOTS 配置解析错误的全局变量
 let rootsParsingError = null;
 
+// 初始化云盘根目录配置
 function initializeRoots() {
     if (typeof authConfig.roots !== 'undefined') {
         return;
@@ -75,10 +87,12 @@ function initializeRoots() {
     }
 }
 
+// 获取配置错误信息
 function getConfigError() {
     return rootsParsingError;
 }
 
+// 解析 URL 路径，提取云盘 ID 和文件路径
 function parsePath(path) {
     const regex = /^\/(\d+):(\/.*)/;
     const match = path.match(regex);
@@ -91,6 +105,7 @@ function parsePath(path) {
     return { driveId: null, filePath: '' };
 }
 
+// 构造 JSON 格式的 HTTP 响应
 function jsonResponse(data, status = 200) {
     return new Response(JSON.stringify(data, null, 2), {
         status,
@@ -102,12 +117,12 @@ function jsonResponse(data, status = 200) {
 }
 
 // ===============================================================
-// GOOGLE DRIVE API MODULE
+// Google Drive API 模块
 // ===============================================================
 
 class GoogleDrive {
     constructor(config, order) {
-        this.order = order;
+        this.order = order; // 云盘在配置数组中的索引
         this.root = config.roots[order];
         this.root.protect_file_link = this.root.protect_file_link || false;
 
@@ -116,6 +131,7 @@ class GoogleDrive {
         this.authConfig.client_secret = typeof CLIENT_SECRET !== 'undefined' ? CLIENT_SECRET : "";
         this.authConfig.refresh_token = typeof REFRESH_TOKEN !== 'undefined' ? REFRESH_TOKEN : "";
 
+        // 内存缓存
         this.paths = {};
         this.files = {};
         this.id_path_cache = {};
@@ -125,6 +141,7 @@ class GoogleDrive {
         this.kv_cache_available = this.authConfig.enable_kv_cache && typeof GD_INDEX_CACHE !== 'undefined';
     }
 
+    // 从 KV 中获取数据
     async _kv_get(key) {
         if (!this.kv_cache_available) return null;
         try {
@@ -135,6 +152,7 @@ class GoogleDrive {
         }
     }
     
+    // 将数据存入 KV
     async _kv_put(key, value) {
         if (!this.kv_cache_available) return;
 
@@ -149,6 +167,7 @@ class GoogleDrive {
         await GD_INDEX_CACHE.put(key, JSON.stringify(value), { expirationTtl });
     }
 
+    // 初始化 Google Drive 实例，获取访问令牌
     async init() {
         if (!this.authConfig.client_id || !this.authConfig.client_secret || !this.authConfig.refresh_token) {
             throw new Error(`凭证未在环境变量中配置。`);
@@ -156,6 +175,7 @@ class GoogleDrive {
         await this.accessToken();
         if (authConfig.user_drive_real_root_id) return;
 
+        // 获取个人云盘的真实根目录 ID，用于后续路径解析
         if (this.order === 0) {
             const root_obj = await this.findItemById("root");
             if (root_obj && root_obj.id) {
@@ -164,6 +184,7 @@ class GoogleDrive {
         }
     }
     
+    // 初始化根目录类型（个人盘、团队盘或子文件夹）
     async initRootType() {
         this.root_type = -1; 
         let root_id = this.root.id;
@@ -175,6 +196,7 @@ class GoogleDrive {
 
         const root_obj = await this.findItemById(root_id);
 
+        // 处理根目录是快捷方式的情况
         if (root_obj && root_obj.mimeType === CONSTS.shortcut_mime_type) {
             if (root_obj.shortcutDetails && root_obj.shortcutDetails.targetId && root_obj.shortcutDetails.targetMimeType === CONSTS.folder_mime_type) {
                 this.root.id = root_obj.shortcutDetails.targetId;
@@ -185,6 +207,7 @@ class GoogleDrive {
             }
         }
         
+        // 判断根目录类型
         if (root_id === "root" || root_id === authConfig.user_drive_real_root_id) {
             this.root_type = CONSTS.gd_root_type.user_drive;
         } else {
@@ -202,6 +225,7 @@ class GoogleDrive {
         }
     }
 
+    // 处理基础身份验证
     basicAuthResponse(request) {
         const user = this.root.user || "";
         const pass = this.root.pass || "";
@@ -226,6 +250,7 @@ class GoogleDrive {
         return unauthorizedResponse;
     }
 
+    // 处理文件下载请求
     async down(id, range = "", inline = false) {
         const url = `https://www.googleapis.com/drive/v3/files/${id}?alt=media`;
         const requestOption = await this.requestOption({ Range: range });
@@ -245,6 +270,7 @@ class GoogleDrive {
         });
     }
 
+    // 获取单个文件的信息
     async file(path) {
         if (this.files[path]) return this.files[path];
 
@@ -283,6 +309,7 @@ class GoogleDrive {
         return file;
     }
     
+    // 获取文件夹内容列表
     async list(path, page_token = null, page_index = 0) {
         const cacheKey = `list:${this.order}:${path}:${page_index}:${page_token || ''}`;
         let list_result = await this._kv_get(cacheKey);
@@ -297,6 +324,7 @@ class GoogleDrive {
         return list_result;
     }
 
+    // 内部函数，通过文件夹ID获取内容
     async _ls(parent, page_token = null, page_index = 0) {
         if (!parent) return null;
         
@@ -326,12 +354,14 @@ class GoogleDrive {
         };
     }
     
+    // 执行搜索
     async search(query) {
         if (!query) return { data: { files: [] } };
         
         const cacheKey = `all_files:${this.order}:${this.root.id}`;
         let cacheObject = await this._kv_get(cacheKey);
 
+        // 如果搜索缓存不存在，则触发全盘扫描
         if (!cacheObject || !cacheObject.files) {
             console.log(`[Search] 缓存未命中，为云盘 ${this.order} 按需执行扫描...`);
             console.time(`[Search] Drive ${this.order} scan duration`);
@@ -343,7 +373,6 @@ class GoogleDrive {
                 total_files: all_files.length
             };
             
-            // 使用专门的搜索缓存TTL，确保立即可用
             const searchCacheKey = `search_cache:${this.order}:${this.root.id}`;
             await Promise.all([
                 this._kv_put(cacheKey, cacheObject),
@@ -356,12 +385,13 @@ class GoogleDrive {
             console.log(`[Search] 使用现有缓存，云盘 ${this.order}，共 ${cacheObject.files.length} 个项目，缓存时间: ${cacheObject.last_updated}`);
         }
         
+        // 在内存中进行过滤
         const lowerCaseQuery = query.toLowerCase();
         const filtered_files = cacheObject.files.filter(file => 
             file.name.toLowerCase().includes(lowerCaseQuery)
         );
         
-        // 异步缓存路径映射，不阻塞搜索结果返回
+        // 异步缓存搜索结果的路径，加速后续访问
         Promise.all(filtered_files.map(file => {
             if (file.id && file.path) {
                 return this._kv_put(`path_by_id:${this.order}:${file.id}`, file.path);
@@ -380,6 +410,7 @@ class GoogleDrive {
         };
     }
 
+    // 递归列出所有文件，用于生成搜索缓存
     async listAllFiles(folderId, basePath = '/') {
         const allFiles = [];
         const foldersToProcess = [{ id: folderId, path: basePath }];
@@ -415,6 +446,7 @@ class GoogleDrive {
         return allFiles;
     }
     
+    // 根据路径查找文件夹ID
     async findPathId(path) {
         if (this.paths[path]) return this.paths[path];
     
@@ -453,6 +485,7 @@ class GoogleDrive {
         return parentId;
     }
 
+    // 内部函数，在父文件夹内根据名称查找子文件夹ID
     async _findDirId(parentId, name) {
         if (!parentId) return null;
         
@@ -480,6 +513,7 @@ class GoogleDrive {
         return id;
     }
     
+    // 根据文件ID反向查找其完整路径
     async findPathById(id) {
         const cacheKey = `path_by_id:${this.order}:${id}`;
         if (this.id_path_cache[id]) return this.id_path_cache[id];
@@ -504,6 +538,7 @@ class GoogleDrive {
         return path;
     }
 
+    // 递归查找父文件夹，直到根目录
     async findParentFilesRecursion(child_id) {
         const target_top_id = this.root_type === CONSTS.gd_root_type.user_drive ? authConfig.user_drive_real_root_id : this.root.id;
         const parent_files = [];
@@ -528,6 +563,7 @@ class GoogleDrive {
         return meet_top ? parent_files : null;
     }
 
+    // 根据ID获取单个文件或文件夹对象
     async findItemById(id, raw = false) {
         const is_user_drive = this.root_type === CONSTS.gd_root_type.user_drive;
         let url = `https://www.googleapis.com/drive/v3/files/${id}?fields=${CONSTS.default_file_fields}`;
@@ -545,6 +581,7 @@ class GoogleDrive {
         return raw ? file : this._processShortcut(file);
     }
     
+    // 根据ID获取共享云盘对象
     async getShareDriveObjById(id) {
         const url = `https://www.googleapis.com/drive/v3/drives/${id}`;
         const requestOption = await this.requestOption();
@@ -553,6 +590,7 @@ class GoogleDrive {
         return obj && obj.id ? obj : null;
     }
     
+    // 获取或刷新访问令牌
     async accessToken() {
         if (this.authConfig.expires === undefined || this.authConfig.expires < Date.now()) {
             const obj = await this.fetchAccessToken();
@@ -564,6 +602,7 @@ class GoogleDrive {
         return this.authConfig.accessToken;
     }
 
+    // 调用 Google API 获取新的访问令牌
     async fetchAccessToken() {
         const url = "https://www.googleapis.com/oauth2/v4/token";
         const post_data = {
@@ -585,6 +624,7 @@ class GoogleDrive {
         return data;
     }
     
+    // 构造带有认证头信息的请求选项
     async requestOption(headers = {}, method = "GET") {
         const accessToken = await this.accessToken();
         const newHeaders = new Headers(headers);
@@ -592,6 +632,7 @@ class GoogleDrive {
         return { method, headers: newHeaders };
     }
     
+    // 处理快捷方式，返回其指向的真实文件对象
     _processShortcut(file) {
         if (file && file.mimeType === CONSTS.shortcut_mime_type && file.shortcutDetails && file.shortcutDetails.targetId) {
             return {
@@ -608,26 +649,25 @@ class GoogleDrive {
         return files ? files.map(file => this._processShortcut(file)) : [];
     }
 
+    // 将对象转换为 URL 查询字符串
     enQuery(data) {
         return Object.entries(data)
             .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
             .join('&');
     }
 
-    // --- MODIFICATION: New "soft refresh" method ---
-    // This method refreshes the first page of a directory's cache without using 'list' operations.
+    // “软刷新”方法：刷新目录的第一页缓存，不使用 'list' 操作
     async softRefreshPathCache(path) {
         if (!this.kv_cache_available) {
             return { success: true, message: "KV cache is not enabled." };
         }
         try {
-            // Re-fetch the first page directly from Google Drive
+            // 直接从 Google Drive 重新获取第一页内容
             const id = await this.findPathId(path);
             const list_result = await this._ls(id, null, 0);
 
             if (list_result && list_result.data) {
-                // Overwrite the cache for the first page.
-                // This doesn't clean up old paginated entries, but avoids 'list' operations.
+                // 直接覆写第一页的缓存
                 const cacheKey = `list:${this.order}:${path}:0:`;
                 await this._kv_put(cacheKey, list_result);
             }
@@ -638,7 +678,7 @@ class GoogleDrive {
         }
     }
 
-    // This method is now only used by the admin panel's "Clear" button.
+    // “硬清理”方法：使用 'list' 操作彻底清除路径下的所有缓存，仅供后台使用
     async clearPathCache(path) {
         if (!this.kv_cache_available) {
             return { success: true, message: "KV cache is not enabled." };
@@ -676,9 +716,10 @@ class GoogleDrive {
     }
 }
 
-// Global GoogleDrive instance cache
+// 全局 GoogleDrive 实例缓存
 const gds = [];
 
+// 获取或创建 GoogleDrive 实例
 async function getGoogleDrive(driveId, forceReload = false) {
     if (!forceReload && gds[driveId]) {
         return gds[driveId];
@@ -700,9 +741,10 @@ async function getGoogleDrive(driveId, forceReload = false) {
 }
 
 // ===============================================================
-// HTML RENDERING MODULE
+// HTML 渲染模块
 // ===============================================================
 
+// 渲染主文件列表页面
 async function renderHTML(driveId, filePath, urlParams, url) {
     const clientConfig = {
         siteName: authConfig.siteName,
@@ -946,7 +988,6 @@ async function renderHTML(driveId, filePath, urlParams, url) {
                 }
             }
 
-            // --- MODIFIED: Intelligent Search Hint ---
             async function performSearch(query) {
                 if (appState.isLoading || !query) return;
                 appState.path = \`搜索结果: "\${query}"\`;
@@ -955,7 +996,7 @@ async function renderHTML(driveId, filePath, urlParams, url) {
 
                 breadcrumbs.innerHTML = \`<a href="/\${appState.driveId}:/">根目录</a><span class="separator"> / </span><span>\${appState.path}</span>\`;
                 
-                // Use a timer to only show the "first search" hint for long-running searches.
+                // 仅在搜索时间较长时显示提示
                 let hintTimer = setTimeout(() => {
                     const hintElement = document.createElement('div');
                     hintElement.className = 'search-hint';
@@ -965,11 +1006,10 @@ async function renderHTML(driveId, filePath, urlParams, url) {
                     if (loadingIndicator.style.display === 'block') {
                          loadingIndicator.appendChild(hintElement);
                     }
-                }, 2000); // Show hint if search takes longer than 2 seconds
+                }, 2000);
 
                 const result = await apiFetch('/api/search', { q: query });
 
-                // Clean up timer and hint after the search is complete
                 clearTimeout(hintTimer);
                 const existingHint = loadingIndicator.querySelector('.search-hint');
                 if (existingHint) {
@@ -1092,7 +1132,7 @@ async function renderHTML(driveId, filePath, urlParams, url) {
 </html>`;
 }
 
-// --- REFACTORED FILE PREVIEW PAGE ---
+// 渲染文件预览/播放页面
 async function renderFilePageHTML(driveId, file, filePath, url) {
     const fileName = file.name;
     const isVideo = file.mimeType.startsWith('video/');
@@ -1112,7 +1152,7 @@ async function renderFilePageHTML(driveId, file, filePath, url) {
         mediaElement = `<div class="image-container"><img src="${directViewUrl}" alt="${fileName}"></div>`;
     }
 
-    // Generate breadcrumbs HTML
+    // 生成面包屑导航HTML
     const pathParts = filePath.split('/').filter(p => p && p !== fileName);
     let cumulativePath = '';
     const breadcrumbsHtml = `
@@ -1290,13 +1330,13 @@ async function renderFilePageHTML(driveId, file, filePath, url) {
 
     <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
     <script>
-        // Initialize Plyr player if it exists
+        // 初始化 Plyr 播放器
         const playerElement = document.getElementById('player');
         if (playerElement) {
             const player = new Plyr(playerElement);
         }
 
-        // Clipboard copy functionality
+        // 复制链接功能
         document.getElementById('copy-link-btn').addEventListener('click', (e) => {
             const linkToCopy = '${fullDownloadUrl}';
             navigator.clipboard.writeText(linkToCopy).then(() => {
@@ -1308,7 +1348,7 @@ async function renderFilePageHTML(driveId, file, filePath, url) {
             });
         });
 
-        // Dropdown menu functionality
+        // 外部播放器下拉菜单功能
         const dropdownBtn = document.getElementById('external-player-btn');
         const dropdownMenu = document.getElementById('external-player-menu');
         if (dropdownBtn) {
@@ -1328,14 +1368,14 @@ async function renderFilePageHTML(driveId, file, filePath, url) {
 }
 
 // ===============================================================
-// ADMIN PANEL MODULE
+// 后台管理面板模块
 // ===============================================================
 
 async function handleAdminRouter(request) {
     const adminPass = typeof ADMIN_PASS !== 'undefined' ? ADMIN_PASS : null;
 
     if (!adminPass) {
-        return new Response("Admin function is disabled: ADMIN_PASS is not set.", {
+        return new Response("后台管理功能已禁用：未设置 ADMIN_PASS 环境变量。", {
             status: 503, 
             headers: { 'Content-Type': 'text/plain; charset=utf-8' }
         });
@@ -1343,7 +1383,7 @@ async function handleAdminRouter(request) {
 
     const url = new URL(request.url);
     
-    // 处理登录验证
+    // 处理登录请求
     if (request.method === 'POST' && url.searchParams.get('action') === 'login') {
         const formData = await request.formData();
         const password = formData.get('admin_password');
@@ -1375,27 +1415,26 @@ async function handleAdminRouter(request) {
             const decoded = atob(authCookie);
             const [cookiePass, timestamp] = decoded.split(':');
             const now = Date.now();
-            // 检查密码正确且未过期（1小时）
             if (cookiePass === adminPass && (now - parseInt(timestamp)) < 3600000) {
                 isAuthenticated = true;
             }
         } catch (e) {
-            // Cookie 解析失败，需要重新登录
+            // Cookie 解析失败
         }
     }
     
-    // 如果未认证，显示登录页面
     if (!isAuthenticated) {
         return new Response(getAdminLoginPage(), { 
             headers: { 'Content-Type': 'text/html; charset=utf-8' } 
         });
     }
 
-    // 处理清理操作（已认证用户）
+    // 处理已认证用户的 POST 请求 (清理缓存)
     if (request.method === 'POST') {
         return await handleAdminPost(request, adminPass);
     }
 
+    // 显示后台主页面
     if (request.method === 'GET') {
         return new Response(getAdminDashboardPage(), { 
             headers: { 'Content-Type': 'text/html; charset=utf-8' } 
@@ -1566,12 +1605,10 @@ function getAdminLoginPage(errorMessage = null) {
     </html>`;
 }
 
-// --- REFACTORED ADMIN DASHBOARD ---
+// 渲染后台管理主页面
 function getAdminDashboardPage(message = null, isError = false) {
     const messageHtml = message ? `<div class="message ${isError ? 'error' : 'success'}">${message}</div>` : '';
 
-    // The entire HTML, CSS, and JS are now in a single, clean template literal.
-    // This is more robust for the Cloudflare Worker environment.
     return `
     <!DOCTYPE html>
     <html lang="zh-CN">
@@ -1631,7 +1668,6 @@ function getAdminDashboardPage(message = null, isError = false) {
             }
             @keyframes spin { 100% { transform: rotate(360deg); } }
             
-            /* --- REFACTORED GRID LAYOUT --- */
             #drive-management-grid {
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -1772,10 +1808,6 @@ function getAdminDashboardPage(message = null, isError = false) {
         </div>
 
         <script>
-            // --- REFACTORED SCRIPT ---
-            // This script is now cleaner and only handles data logic.
-            // All layout and styling are handled by CSS.
-            
             let cacheStatusData = null;
 
             function logout() {
@@ -1915,7 +1947,7 @@ function getAdminDashboardPage(message = null, isError = false) {
                 }
             }
             
-            // Initial load
+            // 页面加载时自动获取状态
             document.addEventListener('DOMContentLoaded', loadCacheStatus);
         </script>
     </body>
@@ -1925,7 +1957,7 @@ function getAdminDashboardPage(message = null, isError = false) {
 
 async function clearKVCache(driveIndex) {
     if (typeof GD_INDEX_CACHE === 'undefined') {
-        return { success: false, message: "KV Namespace 'GD_INDEX_CACHE' is not bound." };
+        return { success: false, message: "KV 命名空间 'GD_INDEX_CACHE' 未绑定。" };
     }
     
     try {
@@ -1970,7 +2002,7 @@ async function clearKVCache(driveIndex) {
 }
 
 // ===============================================================
-// HTTP ROUTING MODULE
+// HTTP 路由模块
 // ===============================================================
 
 async function handleRequest(request) {
@@ -2060,7 +2092,6 @@ async function handleRequest(request) {
         return gd.down(file.id, request.headers.get('Range'), false);
     }
 
-    // --- MODIFICATION: Pass filePath to renderFilePageHTML ---
     return new Response(await renderFilePageHTML(driveId, file, filePath, url), {
         status: 200,
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
@@ -2110,7 +2141,6 @@ async function handleApiRouter(request) {
             if (typeof pathToRefresh !== 'string') {
                 return jsonResponse({ error: "Missing 'path' parameter" }, 400);
             }
-            // --- MODIFICATION: Use soft refresh to avoid 'list' operations ---
             const result = await gd.softRefreshPathCache(pathToRefresh);
             return jsonResponse(result);
         
@@ -2120,12 +2150,12 @@ async function handleApiRouter(request) {
 }
 
 // ===============================================================
-// CACHE STATUS FUNCTIONS
+// 缓存状态函数
 // ===============================================================
 
 async function getCacheStatus() {
     if (typeof GD_INDEX_CACHE === 'undefined') {
-        return { error: "KV namespace not available" };
+        return { error: "KV 命名空间未绑定" };
     }
 
     const drives = [];
@@ -2224,21 +2254,21 @@ async function handleForceUpdate(formData) {
 }
 
 // ===============================================================
-// SCHEDULED TASK (CRON) MODULE
+// 定时任务 (CRON) 模块
 // ===============================================================
 
 async function handleScheduled(event) {
     const now = new Date();
-    console.log(`[${now.toISOString()}] Cron job starting.`);
+    console.log(`[${now.toISOString()}] Cron 任务启动。`);
 
     if (typeof GD_INDEX_CACHE === 'undefined') {
-        console.error(`[${now.toISOString()}] Cron job failed: KV namespace 'GD_INDEX_CACHE' is not bound.`);
+        console.error(`[${now.toISOString()}] Cron 任务失败: KV 命名空间 'GD_INDEX_CACHE' 未绑定。`);
         return;
     }
     
     const configError = getConfigError();
     if (configError || !authConfig.roots || !authConfig.roots.length) {
-        console.warn(`[${now.toISOString()}] Cron job skipped: DRIVE_ROOTS not configured correctly. Error: ${configError || 'roots array is empty.'}`);
+        console.warn(`[${now.toISOString()}] Cron 任务跳过: DRIVE_ROOTS 配置不正确。错误: ${configError || 'roots 数组为空。'}`);
         return;
     }
 
@@ -2258,18 +2288,18 @@ async function handleScheduled(event) {
     const driveId = currentIndex;
     const rootConfig = authConfig.roots[driveId];
     
-    console.log(`[${now.toISOString()}] Processing drive ${driveId} (${rootConfig.name}).`);
+    console.log(`[${now.toISOString()}] 正在处理云盘 ${driveId} (${rootConfig.name}).`);
 
     const gd = await getGoogleDrive(driveId, true);
     if (!gd) {
-        console.error(`[${now.toISOString()}] Failed to initialize drive ${driveId} (${rootConfig.name}). Skipping.`);
+        console.error(`[${now.toISOString()}] 初始化云盘 ${driveId} (${rootConfig.name}) 失败。跳过。`);
         await advanceToNextDrive(driveId);
         return;
     }
 
     await gd.initRootType();
     if (gd.root_type === -1) {
-        console.error(`[${now.toISOString()}] Failed to determine root type for drive ${driveId} (${rootConfig.name}). Skipping.`);
+        console.error(`[${now.toISOString()}] 确定云盘 ${driveId} (${rootConfig.name}) 的根目录类型失败。跳过。`);
         await advanceToNextDrive(driveId);
         return;
     }
@@ -2278,13 +2308,13 @@ async function handleScheduled(event) {
     const cacheObject = await gd._kv_get(cacheKey);
 
     if (await isCacheUpdatedToday(cacheObject, today_utc8_string, utc8Offset)) {
-        console.log(`[${now.toISOString()}] Drive ${driveId} (${rootConfig.name}) already updated today. Skipping.`);
+        console.log(`[${now.toISOString()}] 云盘 ${driveId} (${rootConfig.name}) 今天已经更新过。跳过。`);
         await advanceToNextDrive(driveId);
         return;
     }
 
     if (cacheObject && currentHour_utc8 < authConfig.cron_update_hour) {
-        console.log(`[${now.toISOString()}] It's before ${authConfig.cron_update_hour}:00 (UTC+8). Scheduled update for drive ${driveId} (${rootConfig.name}) postponed.`);
+        console.log(`[${now.toISOString()}] 当前时间早于设定的更新时间 ${authConfig.cron_update_hour}:00 (UTC+8)。云盘 ${driveId} (${rootConfig.name}) 的计划更新推迟。`);
         return;
     }
 
@@ -2304,10 +2334,10 @@ async function isCacheUpdatedToday(cacheObject, today_utc8_string, utc8Offset) {
 }
 
 async function updateDriveCache(gd, driveId, rootConfig, cacheKey, startTime) {
-    console.log(`[${startTime.toISOString()}] Checks passed for drive ${driveId} (${rootConfig.name}). Starting cache update.`);
+    console.log(`[${startTime.toISOString()}] 云盘 ${driveId} (${rootConfig.name}) 检查通过。开始更新缓存。`);
     
     try {
-        console.log(`[${startTime.toISOString()}] Listing all files for drive ${driveId} (${rootConfig.name})...`);
+        console.log(`[${startTime.toISOString()}] 正在为云盘 ${driveId} (${rootConfig.name}) 列出所有文件...`);
         const all_files = await gd.listAllFiles(gd.root.id);
 
         const newCacheObject = {
@@ -2317,21 +2347,21 @@ async function updateDriveCache(gd, driveId, rootConfig, cacheKey, startTime) {
         };
 
         await gd._kv_put(cacheKey, newCacheObject);
-        console.log(`[${startTime.toISOString()}] Successfully cached ${all_files.length} files for drive ${driveId} (${rootConfig.name}).`);
+        console.log(`[${startTime.toISOString()}] 成功为云盘 ${driveId} (${rootConfig.name}) 缓存了 ${all_files.length} 个文件。`);
 
     } catch (e) {
-        console.error(`[${startTime.toISOString()}] Unhandled error processing drive ${driveId} (${rootConfig.name}):`, e.message, e.stack);
+        console.error(`[${startTime.toISOString()}] 处理云盘 ${driveId} (${rootConfig.name}) 时发生未处理的错误:`, e.message, e.stack);
     }
 }
 
 async function advanceToNextDrive(currentDriveId) {
     const nextIndex = (currentDriveId + 1) % authConfig.roots.length;
     await GD_INDEX_CACHE.put(CONSTS.CRON_NEXT_DRIVE_INDEX_KEY, nextIndex.toString());
-    console.log(`[${new Date().toISOString()}] Cron job finished for drive ${currentDriveId}. Next to process is index: ${nextIndex}.`);
+    console.log(`[${new Date().toISOString()}] 云盘 ${currentDriveId} 的 Cron 任务完成。下一个将处理索引: ${nextIndex}。`);
 }
 
 // ===============================================================
-// MAIN EVENT LISTENERS
+// 主事件监听器
 // ===============================================================
 
 addEventListener("fetch", (event) => {
@@ -2347,7 +2377,7 @@ async function handleHttpRequest(request) {
         initializeRoots();
         return await handleRequest(request);
     } catch (error) {
-        console.error('Unhandled error in HTTP request:', error);
+        console.error('未处理的 HTTP 请求错误:', error);
         return new Response(
             `服务器内部错误: ${error.message}`, 
             { 
@@ -2363,6 +2393,6 @@ async function handleCronEvent(event) {
         initializeRoots();
         await handleScheduled(event);
     } catch (error) {
-        console.error('Unhandled error in scheduled event:', error);
+        console.error('未处理的定时任务错误:', error);
     }
 }
